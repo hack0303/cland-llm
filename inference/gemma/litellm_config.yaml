@@ -1,0 +1,12 @@
+model_list:
+  - model_name: gemma-4
+    litellm_params:
+      model: openai/custom
+      api_base: http://127.0.0.1:10303/v1
+      api_key: "sk-1234"
+      # 核心修复：允许丢弃不支持的参数
+      drop_params: true 
+
+litellm_settings:
+  # 全局开启丢弃模式，防止未来其他参数导致崩溃
+  drop_params: true
