@@ -1,121 +1,91 @@
-# TripoSG: High-Fidelity 3D Shape Synthesis using Large-Scale Rectified Flow Models
+# TripoSG 图生 3D 服务
 
-<div align="center">
+基于 VAST-AI/TripoSG（1.5B rectified flow transformer，图生 3D）的常驻 API 服务。
+代码见 `inference/triposg/`，部署于 **GPU 1 / 端口 10332**。
 
-[![Project Page](https://img.shields.io/badge/🏠-Project%20Page-blue.svg)](https://yg256li.github.io/TripoSG-Page/)
-[![Paper](https://img.shields.io/badge/📑-Paper-green.svg)](https://arxiv.org/abs/2502.06608)
-[![Model](https://img.shields.io/badge/%F0%9F%A4%97%20Model-TripoSG-yellow.svg)](https://huggingface.co/VAST-AI/TripoSG)
-[![Online Demo](https://img.shields.io/badge/%F0%9F%A4%97%20HF%20Space-TripoSG-blue)](https://huggingface.co/spaces/VAST-AI/TripoSG)
-[![Online Demo](https://img.shields.io/badge/%F0%9F%A4%97%20HF%20Space-TripoSG%20scribble-blue)](https://huggingface.co/spaces/VAST-AI/TripoSG-scribble)
+## 环境（triposg_env，python 3.10）
 
-**By [Tripo](https://www.tripo3d.ai)**
-
-</div>
-
-![teaser](assets/doc/triposg_teaser.png)
-
-TripoSG is an advanced high-fidelity, high-quality and high-generalizability image-to-3D generation foundation model. It leverages large-scale rectified flow transformers, hybrid supervised training, and a high-quality dataset to achieve state-of-the-art performance in 3D shape generation.
-
-## ✨ Key Features
-
-- **High-Fidelity Generation**: Produces meshes with sharp geometric features, fine surface details, and complex structures
-- **Semantic Consistency**: Generated shapes accurately reflect input image semantics and appearance
-- **Strong Generalization**: Handles diverse input styles including photorealistic images, cartoons, and sketches
-- **Robust Performance**: Creates coherent shapes even for challenging inputs with complex topology
-
-## 🔬 Technical Highlights
-
-- **Large-Scale Rectified Flow Transformer**: Combines RF's linear trajectory modeling with transformer architecture for stable, efficient training
-- **Advanced VAE Architecture**: Uses Signed Distance Functions (SDFs) with hybrid supervision combining SDF loss, surface normal guidance, and eikonal loss
-- **High-Quality Dataset**: Trained on 2 million meticulously curated Image-SDF pairs, ensuring superior output quality
-- **Efficient Scaling**: Implements architecture optimizations for high performance even at smaller model scales
-
-## 🔥 Updates
-
-* [2025-04] Release TripoSG-scribble, a CFG-distilled, 512 token model for fast shape prototyping from scribble+prompt! Try the online demo [here](https://huggingface.co/spaces/VAST-AI/TripoSG-scribble).
-* [2025-03] Release of TripoSG 1.5B parameter rectified flow model and VAE trained on 2048 latent tokens, along with inference code and interactive demo
-
-## 🔨 Installation
-
-Clone the repo:
 ```bash
-git clone https://github.com/VAST-AI-Research/TripoSG.git
-cd TripoSG
+conda activate triposg_env
+# torch 2.6.0+cu118（阿里云镜像 wheel，非 pip 官方源）
+# 依赖：diffusers transformers torchvision 0.21.0 einops opencv-python trimesh
+#       omegaconf scikit-image numpy==1.22.3 peft jaxtyping typeguard pymeshlab fastapi uvicorn
 ```
 
-Create a conda environment (optional):
+## 启动
+
 ```bash
-conda create -n tripoSG python=3.10
-conda activate tripoSG
+cd /mnt/data/ai_workspace/cland-llm/inference/triposg
+CUDA_VISIBLE_DEVICES=1 nohup python3 server.py --port 10332 > /tmp/triposg_server.log 2>&1 &
 ```
 
-Install dependencies:
+首次加载 ~90s（模型 + RMBG 背景移除），常驻显存仅 **4.15GB**。
+
+## 调用
+
 ```bash
-# pytorch (select correct CUDA version)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/{your-cuda-version}
+# 健康检查
+curl http://127.0.0.1:10332/health
 
-# other dependencies
-pip install -r requirements.txt
+# 图生 3D（上传图片 → GLB）
+curl -X POST http://127.0.0.1:10332/generate \
+  -F "image=@/path/to/img.png" \
+  -F "steps=50" -F "seed=42" -F "guidance_scale=7.0" -F "faces=-1"
 ```
 
-## 💡 Quick Start
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| image | 必填 | 输入图片（自动去背景） |
+| steps | 50 | 采样步数，30~50 |
+| seed | 42 | 随机种子 |
+| guidance_scale | 7.0 | CFG 强度 |
+| faces | -1 | >0 时简化面数（quadric edge collapse） |
 
-Generate a 3D mesh from an image:
+响应：`{"glb": "...", "seconds": 1520, "vertices": 667518, "faces": 1335036, ...}`
+
+输出目录：`/mnt/data/ai_workspace/outputs3d/`（`triposg_<ts>_<seed>.glb`）
+
+## 实测性能（单张 P40）
+
+| 阶段 | 耗时 |
+|---|---|
+| 模型加载 | ~90s（一次性） |
+| 50 步扩散推理 | **~7.5 分钟**（9s/步） |
+| SDF→mesh 提取（505³） | **~18 分钟**（瓶颈，diso DiffDMC） |
+| 总计 | ~26 分钟/图 |
+
+显存峰值 ~9.6GB（推理阶段），常驻 4.15GB。
+
+## 关键部署记录（踩坑）
+
+### diso 编译（无预编译 wheel，必须现场编译）
+
+系统环境：Ubuntu 24.04（gcc-13）+ CUDA 11.8（nvcc 只支持 gcc≤11）+ glibc 2.39。
+解决方案（`/tmp/diso-0.1.4` 已 patch，编译参数写死进 setup.py）：
+
 ```bash
-python -m scripts.inference_triposg --image-input assets/example_data/hjswed.png --output-path ./output.glb
+export CC=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc   # conda gcc-11（conda install --offline 本地 .conda 文件）
+export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++
+export NVCC_FLAGS="-O3"
+export TORCH_CUDA_ARCH_LIST="6.1"                        # P40 sm_61
+pip install --no-build-isolation /tmp/diso-0.1.4/
 ```
 
-Limiting the number of faces:
-```bash
-python -m scripts.inference_triposg --image-input assets/example_data/hjswed.png --faces 5000 --output-path ./output.glb
-```
+setup.py patch 内容：
+- `extra_compile_args["cxx"]` 加 `-I/usr/include/c++/13 -I/usr/include/x86_64-linux-gnu/c++/13 -I/usr/include/c++/13/x86_64-linux-gnu -I/usr/include/c++/13/backward -I/usr/include/x86_64-linux-gnu`（conda gcc 找不到系统 C++ 头）
+- `extra_link_args`（**必须传给 CUDAExtension 对象，不是 setup()**）：`-B/usr/lib/gcc/x86_64-linux-gnu/13 -B/usr/lib/x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/x86_64-linux-gnu`（conda ld 找不到 crt/libm/libgcc）
 
-or from scribble+prompt:
-```bash
- python -m scripts.inference_triposg_scribble --image-input assets/example_scribble_data/cat_with_wings.png --prompt "a cat with wings" --scribble-conf 0.3 --output-path output.glb
-```
+### 其他
 
-The required model weights will be automatically downloaded:
-- TripoSG (image condition) model from [VAST-AI/TripoSG](https://huggingface.co/VAST-AI/TripoSG) → `pretrained_weights/TripoSG`
-= TripoSG-scribble (scribble+prompt condition) model from [VAST-AI/TripoSG-scribble](https://huggingface.co/VAST-AI/TripoSG-scribble) → `pretrained_weights/TripoSG-scribble`
-- RMBG model from [briaai/RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4) → `pretrained_weights/RMBG-1.4`
+- conda gcc 安装：`conda install -y --offline ./gcc_linux-64-*.conda ./gxx_linux-64-*.conda ...`（直接指定 pkgs 缓存里的 .conda 文件，绕过网络）
+- conda gcc 缺 sysroot：`ln -sfn / $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot`（曾尝试，最终未用）
+- 权重：`models/TripoSG`（7.5G）+ `inference/triposg/pretrained_weights/RMBG-1.4`（804M）
+- 官方脚本会 `snapshot_download` 权重到 `pretrained_weights/`——用 symlink 指向本地模型避免重复下载
 
-## 💻 System Requirements
+## 端口/GPU 分配
 
-- CUDA-enabled GPU with at least 8GB VRAM
-
-## 📝 Tips
-
-- If you want to use the full VAE module (including the encoder part), you need to uncomment the Line-15 in `triposg/models/autoencoders/autoencoder_kl_triposg.py` and install `torch-cluster`. and run:
-```
-python -m scripts.inference_vae --surface-input assets/example_data_point/surface_point_demo.npy
-```
-
-## 🤝 Community & Support
-
-- **Issues & Discussions**: Use GitHub Issues for bug reports and feature requests.
-- **Contributing**: We welcome contributions!
-
-## 📚 Citation
-
-```
-@article{li2025triposg,
-  title={TripoSG: High-Fidelity 3D Shape Synthesis using Large-Scale Rectified Flow Models},
-  author={Li, Yangguang and Zou, Zi-Xin and Liu, Zexiang and Wang, Dehu and Liang, Yuan and Yu, Zhipeng and Liu, Xingchao and Guo, Yuan-Chen and Liang, Ding and Ouyang, Wanli and others},
-  journal={arXiv preprint arXiv:2502.06608},
-  year={2025}
-}
-```
-
-## ⭐ Acknowledgements
-
-We would like to thank the following open-source projects and research works that made TripoSG possible:
-
-- [DINOv2](https://github.com/facebookresearch/dinov2) for their powerful visual features
-- [RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4) for background removal
-- [🤗 Diffusers](https://github.com/huggingface/diffusers) for their excellent diffusion model framework
-- [HunyuanDiT](https://github.com/Tencent/HunyuanDiT) for DiT
-- [FlashVDM](https://github.com/Tencent/FlashVDM) for their lightning vecset decoder
-- [3DShape2VecSet](https://github.com/1zb/3DShape2VecSet) for 3D shape representation
-
-We are grateful to the broader research community for their open exploration and contributions to the field of 3D generation.
+| 端口 | 服务 | GPU | 显存 |
+|---|---|---|---|
+| 10331 | SDXL 生图 | 0 | 13GB |
+| 10332 | TripoSG 图生 3D | 1 | 4.2GB 常驻 / 9.6GB 峰值 |
+| 10303 | vllm（gemma，未常驻） | 双卡 | - |
