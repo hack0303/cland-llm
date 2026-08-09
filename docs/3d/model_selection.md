@@ -17,7 +17,7 @@
 | 模型 | 参数量 | 输入 | 显存需求 | 质量 | 安装难度 | 关键风险 |
 |---|---|---|---|---|---|---|
 | **Hunyuan3D-2.5** | 形状 2.6B + 纹理 1.3B | 文/图 → 3D | ~10-12GB | ⭐⭐⭐⭐⭐ | 中 | 依赖多（tome/dpm-solver），中文/英文均佳 |
-| **TripoSG** | 1.5B | 文/图 → 3D | ~8GB | ⭐⭐⭐⭐ | 低 | ⚠️ 用户否决，不选 |
+| **TripoSG** | 1.5B | 图 → 3D | ~8GB | ⭐⭐⭐⭐ | 低 | ✅ **已部署**（GPU1:10332） |
 | **SF3D** | 0.7B | 图 → 3D | ~5GB | ⭐⭐⭐⭐ | 低（pip 即用） | 单视图，背面质量一般；**秒级出图** |
 | **TripoSR** | 0.7B | 图 → 3D | ~4GB | ⭐⭐⭐ | 低 | 老，仅占位级 |
 | **TRELLIS** | 7B | 图 → 3D | 20-24GB | ⭐⭐⭐⭐⭐ | 高 | flash-attn 在 P40 编译失败，需 xformers 降级；GPU 1 单卡刚好 |
@@ -28,18 +28,23 @@
 
 ```
 需求：游戏/产品 3D 资产
-├─ 文生 3D（无参考图）────────→ Hunyuan3D-2.5（✅ 唯一成熟选择）
-├─ 图生 3D 高质量 ────────────→ Hunyuan3D-2.5 / TRELLIS
-│     └ GPU 1 单卡（24GB）────→ Hunyuan3D-2.5（TRELLIS 显存贴线，flash-attn 风险）
+├─ 文生 3D（无参考图）────────→ Hunyuan3D-2.5（✅ 唯一成熟选择，待部署）
+├─ 图生 3D 高质量 ────────────→ TripoSG（✅ 已部署 GPU1:10332）
 ├─ 图生 3D 快速占位（秒级）────→ SF3D
 └─ 低模原创（已有成熟流程）────→ Blender 程序化（cland-game-asset-gen E 路线）
 ```
 
-## 四、推荐结论
+## 四、推荐结论（2026-08-09 更新：已落地 TripoSG）
 
-### ✅ 首选：Hunyuan3D-2.5
+### ✅ 已部署：TripoSG（图生 3D）
 
-- **文生 3D 唯一成熟开源选择**（TripoSG 被否决后无竞争者）
+- 用户最终决策：部署 TripoSG（1.5B rectified-flow，图生 3D）
+- 服务：GPU 1 / 端口 10332，常驻显存 4.15GB，详见 `inference/triposg/README.md`
+- 全流程 ~26min/图（推理 7.5min + SDF→mesh 提取 18min）
+
+### 📌 待补：Hunyuan3D-2.5（文生 3D）
+
+- TripoSG 仅支持**图生** 3D；文生 3D 场景（无参考图）需要 Hunyuan3D-2.5 补齐
 - 图生 3D 质量同为开源第一梯队
 - 显存 ~10-12GB，GPU 1 (24GB) 富余，可与后续服务共存
 - 官方支持 4090 级消费卡推理，P40 算力略低但架构兼容
@@ -54,22 +59,22 @@
 
 | 模型 | 否决原因 |
 |---|---|
-| TripoSG | 用户明确否决 |
 | TRELLIS | flash-attn 依赖在 P40 无法编译（xformers 降级效果未知）；24GB 显存贴线无余量 |
 | Unique3D | 与 Hunyuan3D-2.5 同梯队但社区/文档较弱 |
 | TripoSR | 质量过时 |
 
-## 五、部署规划（Hunyuan3D-2.5）
+## 五、部署记录（已完成）
 
-| 项 | 规划 |
+| 项 | 实际值 |
 |---|---|
-| GPU | **GPU 1**（CUDA_VISIBLE_DEVICES=1，GPU 0 留给 SDXL） |
-| 端口 | **10332**（不复用 10331；vllm 10303 也保留） |
-| 环境 | base（torch 2.7.1+cu118）或独立 venv 同版本 |
-| 模型路径 | `/mnt/data/ai_workspace/models/Hunyuan3D-2.5/` |
-| 服务形态 | 常驻 FastAPI（复用 SDXL server 模式）+ CLI 脚本 |
-| 输出目录 | `/mnt/data/ai_workspace/outputs3d/` |
-| 显存预算 | 模型 ~11GB + 激活 ~3GB = ~14GB（24GB 卡余 10GB） |
+| GPU | GPU 1（CUDA_VISIBLE_DEVICES=1）✅ |
+| 端口 | 10332（未复用 10331）✅ |
+| 环境 | triposg_env（py3.10 + torch 2.6.0+cu118）✅ |
+| 模型路径 | `/mnt/data/ai_workspace/models/TripoSG`（7.5G）✅ |
+| 服务形态 | 常驻 FastAPI（`inference/triposg/server.py`）✅ |
+| 输出目录 | `/mnt/data/ai_workspace/outputs3d/` ✅ |
+| 实测显存 | 常驻 4.15GB / 峰值 9.6GB（24GB 卡余 14GB）✅ |
+| 实测耗时 | 50 步推理 7.5min + 网格提取 18min ≈ 26min/图 |
 
 ### 端口分配总表
 
