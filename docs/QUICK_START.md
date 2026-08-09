@@ -1,30 +1,104 @@
-模型蒸馏不是靠一个通用提示词模板就能完成的，它更像一个完整的数据“生产-学习”流程。其核心思路是：让**教师模型**（大模型）针对你的问题生成高质量的回答（尤其是展示推理过程的“思维链”），然后用这些数据去**微调学生模型**（小模型）。
+# CLand-LLM 快速开始
 
-下面为你整理了一个可操作的蒸馏流程，以及其中会用到的提示词和数据模板。
+CLand-LLM 覆盖两条线：**推理服务**（本机常驻，开箱即用）与**模型训练**（LoRA 微调，见文末）。
+
+## 一、推理服务（快速启动）
+
+### 1. 一键启动
+
+```bash
+cd /mnt/data/ai_workspace/cland-llm
+bash scripts/start_services.sh --wait    # 启动 4 个核心服务并等待健康
+bash scripts/start_services.sh --with-sfx # 额外启动音效生成（内存紧张时慎用）
+```
+
+> ⚠️ 机器仅 15GB RAM：默认只起 4 个服务（SDXL/TripoSG/TTS/ASR），AudioGen 音效按需 `--with-sfx`。机器重启后 /tmp 会清空，Spark-TTS 代码已内嵌项目，无需重新 clone。
+
+### 2. 服务总览
+
+| 端口 | 服务 | 模型 | 环境 | GPU | 用法 |
+|---|---|---|---|---|---|
+| 10331 | 文生图 | SDXL base 1.0 | base | 0 | `POST /generate` 提示词→PNG |
+| 10332 | 图生 3D | TripoSG 1.5B | triposg_env | 1 | `POST /generate` 图片→GLB |
+| 10333 | 语音合成 | Spark-TTS 0.5B | audio_env | 1 | `POST /generate` 文本→WAV |
+| 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本 |
+| 10336 | 音效生成 | AudioGen 1.5B | audio_env | 1 | `POST /generate` 提示词→WAV（默认停） |
+
+### 3. 调用速查
+
+```bash
+# 健康检查（任一）
+curl http://127.0.0.1:10331/health
+
+# 文生图（~71s）
+curl -X POST http://127.0.0.1:10331/generate -H "Content-Type: application/json" \
+  -d '{"prompt":"a cat astronaut on the moon, cinematic","steps":30,"seed":42}'
+
+# 图生 3D（~26min，务必后台跑）
+curl -X POST http://127.0.0.1:10332/generate -F "image=@img.png" -F "steps=50" -F "seed=42"
+
+# 语音合成（中文）
+curl -X POST http://127.0.0.1:10333/generate -F "text=你好世界" -F "gender=female"
+
+# 语音识别（返回文本+情感标签）
+curl -X POST http://127.0.0.1:10334/recognize -F "audio=@voice.wav"
+```
+
+### 4. 联动管线（图 → 3D → 语音）
+
+```
+SDXL 生图 (10331) → 参考图 → TripoSG 图生 3D (10332) → GLB
+Spark-TTS (10333) → 角色配音
+SenseVoice (10334) → 语音指令/字幕
+```
+
+## 二、环境速查
+
+| 环境 | python | torch | 用途 |
+|---|---|---|---|
+| base | 3.13 | 2.7.1+cu118 | SDXL |
+| triposg_env | 3.10 | 2.6.0+cu118 | TripoSG（diso 已编译） |
+| audio_env | 3.10 | 2.6.0+cu118 | TTS/ASR/SFX（numpy 1.26.4） |
+
+⚠️ P40 (sm_61) 铁律：torch 必须 cu118 构建（cu128+ 不支持）；cuDNN 9.x 不支持 Pascal，服务已内置 `cudnn.enabled=False` 降级。
+
+## 三、文档导航
+
+| 文档 | 内容 |
+|---|---|
+| `docs/sdxl_USAGE.md` | SDXL 完整使用手册 |
+| `docs/3d/model_selection.md` | 3D 模型选型 + 部署记录 |
+| `docs/speech/model_selection.md` | 语音模型选型（TTS/ASR） |
+| `docs/audio/model_selection.md` | 音乐/音效选型 |
+| `inference/triposg/README.md` | TripoSG 部署踩坑全记录 |
+| `PITFAILLOG.md` | 全部踩坑记录（diso 编译/cuDNN/内存等） |
+| `CHANGELOG.md` | 变更日志 |
+
+## 四、训练路线（LoRA 微调）
+
+> 以下为模型蒸馏/微调实操指南（原有内容保留）。
+
+模型蒸馏的核心思路：让**教师模型**（大模型）针对你的问题生成高质量回答（含思维链），用这些数据**微调学生模型**（小模型）。
 
 ### 🔧 蒸馏实操流程
 
-1.  **明确目标与准备**
-    *   **确定场景**：先想好你要让小模型在什么任务上表现出色（比如数学推理、代码生成、客服问答）。这决定了你选择什么类型的数据。
-    *   **选好“师徒”**：
-        *   **教师模型**：选一个能力强大、在目标领域表现出色的模型，比如 **DeepSeek-R1**、**Qwen2-72B-Instruct** 等。
-        *   **学生模型**：选一个参数较小、结构高效的模型，比如 **Llama-3.2-3B**、**Qwen2-7B** 或更小的模型。
-    *   **准备种子数据**：整理一批代表你任务场景的**问题和指令**。这是触发教师模型产生“知识”的起点。
+1. **明确目标与准备**
+   - 确定场景（数学推理/代码生成/客服问答）
+   - 选"师徒"：教师选 DeepSeek-R1、Qwen2-72B-Instruct 等；学生选 Llama-3.2-3B、Qwen2-7B
+   - 准备种子数据（代表任务场景的问题和指令）
 
-2.  **核心步骤：生成“蒸馏数据”**
-    这是最关键的一步，让教师模型“写作业”，然后把“作业本”给学生用。
-    *   **设计提示词**：你需要设计一个提示词，让教师模型不仅给出答案，更要展示推理过程（即思维链，CoT）。这比直接给答案能传递更多知识。
-    *   **调用教师模型**：将你的种子问题，通过API或本地推理，批量发送给部署好的教师模型，获取包含详细推理和最终答案的回复。
-    *   **数据清洗**：对生成的数据进行过滤，剔除错误、不完整或质量不高的回答。例如，在数学任务中，可以用数学验证库检查答案是否正确。
+2. **核心步骤：生成"蒸馏数据"**
+   - 设计提示词让教师模型展示推理过程（CoT）
+   - 调用教师模型批量生成
+   - 数据清洗（过滤错误/不完整回答）
 
-3.  **训练学生模型**
-    使用上一步生成的“指令-推理-回答”数据集，对学生模型进行**微调（Fine-tuning）**。这一步目前大部分流程是通过编程来实现的，不过像阿里云PAI、腾讯云TI-ONE等平台也提供了图形化的操作界面，可以帮助你更方便地完成微调训练。
+3. **训练学生模型**
+   - 用"指令-推理-回答"数据集对学生模型微调
+   - 参考 `case001/` 的 GPU/DCU/CPU 训练脚本
 
 ### 📝 提示词与数据模板
 
 #### 1. 数据生成提示词模板（向教师模型提问）
-
-这个提示词的目标是**让教师模型展示完整的思考过程**。
 
 > **你是一位精通[填入你的领域，如：数学推理]的专家。请解决以下问题，并**务必**在给出最终答案前，用中文详细展示你的推理步骤（即一步步的思考过程）。**
 >
@@ -35,16 +109,14 @@
 
 #### 2. 蒸馏数据集格式示例
 
-学生模型微调时，通常需要特定格式的数据。这是一个非常通用的JSON格式示例，包含指令、模型生成的推理过程和最终答案：
+（学生模型微调数据集 JSON 格式，见原文档及 `case001/` 说明）
 
-```json
-[
-    {
-        "instruction": "Anna visits 75 houses and gets 14 candies per house, with an extra 2 mini bars for every 5th house. Billy visits 90 houses and gets 11 candies per house. How many more candies does Anna get?",
-        "answer": "<Thought>\n首先，计算Anna的总糖果数。她每户得到14块，所以75户就是14 * 75 = 1050块。然后，她每5户额外得到2块，75户中有75/5 = 15个这样的区间，所以额外得到15 * 2 = 30块。因此，Anna总共得到1050 + 30 = 1080块。\n接下来，计算Billy的总糖果数。他每户得到11块，90户就是11 * 90 = 990块。\n最后，计算差额：1080 - 990 = 90块。\n</Thought>\n\nAnna比Billy多得到90块糖果。"
-    }
-]
-```
-这个数据格式参考了多个平台的蒸馏实践。
+## 五、故障速查
 
-蒸馏是一个很讲究实操的技术，上面的流程和数据模板能帮你理解它的“骨架”。如果你对某个具体环节（比如数据清洗如何操作）或者某个具体的工具平台感兴趣，可以再告诉我，我为你展开说说～
+| 症状 | 处理 |
+|---|---|
+| 服务全部离线 | 机器可能重启过 → `bash scripts/start_services.sh --wait` |
+| 内存不足（<1GB available） | 停 SFX：`kill $(pgrep -f "port 10336")`；必要时按需重启单个服务 |
+| `no kernel image` | torch 版本非 cu118（gemma_env 的 cu128 不能用于这些服务） |
+| `libcudnn.so.9` 缺失 | audio_env 装了 cuDNN 9.1 即可（P40 上 LSTM 需 `cudnn.enabled=False`） |
+| TripoSG 请求 20min+ 无响应 | 正常，网格提取阶段 ~18min |
