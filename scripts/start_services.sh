@@ -25,10 +25,13 @@ start() {  # $1=env  $2=dir  $3=port  $4=logfile  $5=gpu
 start base  inference/sdxl      10331 /tmp/sdxl_server.log      0
 start triposg_env inference/triposg 10332 /tmp/triposg_server.log 1
 start audio_env inference/tts   10333 /tmp/tts_server.log      1
-start audio_env inference/asr   10334 /tmp/asr_server.log      1
 
-# SFX（AudioGen）默认不启动：机器仅 15GB RAM，5 服务同时常驻会 OOM。
-# 需要时: bash scripts/start_services.sh --with-sfx
+# 以下服务默认不启动：机器仅 15GB RAM，全量常驻会 OOM。按需启用：
+#   --with-asr → SenseVoice 语音识别 (10334)
+#   --with-sfx → AudioGen 音效 (10336)
+case " $* " in
+  *" --with-asr "*) start audio_env inference/asr 10334 /tmp/asr_server.log 1 ;;
+esac
 if [ "$1" == "--with-sfx" ]; then
   start audio_env inference/sfx   10336 /tmp/sfx_server.log      1
 fi

@@ -8,11 +8,12 @@ CLand-LLM 覆盖两条线：**推理服务**（本机常驻，开箱即用）与
 
 ```bash
 cd /mnt/data/ai_workspace/cland-llm
-bash scripts/start_services.sh --wait    # 启动 4 个核心服务并等待健康
-bash scripts/start_services.sh --with-sfx # 额外启动音效生成（内存紧张时慎用）
+bash scripts/start_services.sh --wait    # 启动 3 个核心服务并等待健康
+bash scripts/start_services.sh --with-asr # 额外启动语音识别（10334）
+bash scripts/start_services.sh --with-sfx # 额外启动音效生成（10336）
 ```
 
-> ⚠️ 机器仅 15GB RAM：默认只起 4 个服务（SDXL/TripoSG/TTS/ASR），AudioGen 音效按需 `--with-sfx`。机器重启后 /tmp 会清空，Spark-TTS 代码已内嵌项目，无需重新 clone。
+> ⚠️ 机器仅 15GB RAM：默认只起 3 个服务（SDXL/TripoSG/TTS），ASR 与 SFX 按需 `--with-asr`/`--with-sfx`。机器重启后 /tmp 会清空，Spark-TTS 代码已内嵌项目，无需重新 clone。
 
 ### 2. 服务总览
 
@@ -21,8 +22,8 @@ bash scripts/start_services.sh --with-sfx # 额外启动音效生成（内存紧
 | 10331 | 文生图 | SDXL base 1.0 | base | 0 | `POST /generate` 提示词→PNG |
 | 10332 | 图生 3D | TripoSG 1.5B | triposg_env | 1 | `POST /generate` 图片→GLB |
 | 10333 | 语音合成 | Spark-TTS 0.5B | audio_env | 1 | `POST /generate` 文本→WAV |
-| 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本 |
-| 10336 | 音效生成 | AudioGen 1.5B | audio_env | 1 | `POST /generate` 提示词→WAV（默认停） |
+| 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本（**默认停**） |
+| 10336 | 音效生成 | AudioGen 1.5B | audio_env | 1 | `POST /generate` 提示词→WAV（**默认停**） |
 
 ### 3. 调用速查
 
@@ -116,7 +117,7 @@ SenseVoice (10334) → 语音指令/字幕
 | 症状 | 处理 |
 |---|---|
 | 服务全部离线 | 机器可能重启过 → `bash scripts/start_services.sh --wait` |
-| 内存不足（<1GB available） | 停 SFX：`kill $(pgrep -f "port 10336")`；必要时按需重启单个服务 |
+| 内存不足（<1GB available） | 停 SFX/ASR：`kill $(pgrep -f "port 1033[46]")`；必要时按需重启单个服务 |
 | `no kernel image` | torch 版本非 cu118（gemma_env 的 cu128 不能用于这些服务） |
 | `libcudnn.so.9` 缺失 | audio_env 装了 cuDNN 9.1 即可（P40 上 LSTM 需 `cudnn.enabled=False`） |
 | TripoSG 请求 20min+ 无响应 | 正常，网格提取阶段 ~18min |
