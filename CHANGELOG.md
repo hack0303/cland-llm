@@ -9,6 +9,7 @@ description: record your changes
 ### Changes
 
 - 推理/图生视频：落地 AnimateDiff I2V 管线（ComfyUI GPU 1 / 端口 10337 + SD1.5 底座 + mm_sd_v15_v2 运动模块 + IP-Adapter，共 4.4GB；客户端 `inference/i2v/generate.py`）
+- 推理/图生视频：新增 `inference/i2v/compose.py` 大视频合成（多片段硬切/xfade 淡化拼接 + 配音/音效 adelay 对齐 + BGM 铺底 + amix 混流）
 - 实测：16 帧 512×512 20 步 = **140s**（2m20s），1024×1024 ≈ 15.5min；GPU 1 常驻显存 3.1GB；首条出片 `outputs_video/i2v_cat_paw*.mp4`
 - 修复：IPAdapter CrossAttentionPatch dtype 对齐补丁（P40 fp32 query × fp16 k/v）；ffmpeg 动画 webp 转码改 PIL 逐帧提取；常驻服务 setsid 隔离启动
 - 文档：新增 `docs/image2video/RESEARCH.md` 图生视频选型研究——游戏资产生成场景主选 AnimateDiff（SD 生态 + 最轻量），写实向备选 LTX-Video 2B / Wan2.1-I2V-1.3B，ComfyUI 承载规划端口 10337；付费兜底 Grok 视频 5¢/s
