@@ -19,7 +19,7 @@
         "clip": "clips/scene001.mp4",
         "voice": "audio/scene001_voice.wav"
       },
-      "camera_move": "PUSH",
+      "camera_move": "FIXED",
       "shot_size": "MEDIUM_SHOT",
       "composition": "rule of thirds",
       "color": "warm amber against cold blue night"
@@ -38,7 +38,7 @@
         "clip": "clips/scene002.mp4",
         "voice": "audio/scene002_voice.wav"
       },
-      "camera_move": "TRACK",
+      "camera_move": "FIXED",
       "shot_size": "FULL_SHOT",
       "composition": "leading lines",
       "color": "warm amber trail in darkness"
@@ -57,7 +57,7 @@
         "clip": "clips/scene003.mp4",
         "voice": "audio/scene003_voice.wav"
       },
-      "camera_move": "LOW_ANGLE",
+      "camera_move": "FIXED",
       "shot_size": "LONG_SHOT",
       "composition": "low angle looking up",
       "color": "cold blue with tiny warm light"
@@ -114,7 +114,7 @@
         "clip": "clips/scene006.mp4",
         "voice": "audio/scene006_voice.wav"
       },
-      "camera_move": "PUSH",
+      "camera_move": "FIXED",
       "shot_size": "MEDIUM_SHOT",
       "composition": "over the shoulder",
       "color": "warm light on a tearful face"
@@ -133,7 +133,7 @@
         "clip": "clips/scene007.mp4",
         "voice": "audio/scene007_voice.wav"
       },
-      "camera_move": "PUSH",
+      "camera_move": "FIXED",
       "shot_size": "CLOSE_UP",
       "composition": "centered",
       "color": "burst of golden light"
@@ -152,7 +152,7 @@
         "clip": "clips/scene008.mp4",
         "voice": "audio/scene008_voice.wav"
       },
-      "camera_move": "ORBIT",
+      "camera_move": "FIXED",
       "shot_size": "LONG_SHOT",
       "composition": "wide vista",
       "color": "dawn light spreading"

@@ -191,6 +191,19 @@ def main():
     if not has_comfy:
         print("[run] ComfyUI 未运行，无法出片", file=sys.stderr); sys.exit(1)
 
+    # ── 0. 预配音阶段（配音纯文本→音频，不依赖画面，前置批量完成）──
+    if not args.skip_audio and has_tts:
+        print("[run] Phase 0: 预配音（全部台词批量 TTS）...")
+        for clip in clips:
+            s = clip["scene"]
+            if clip.get("voice") and "voice" not in clip["output"]:
+                wav = get_audio(story_dir, clip, "voice", clip["voice"])
+                clip["output"]["voice"] = os.path.relpath(wav, story_dir)
+            if clip.get("sfx") and clip["sfx"] != "无" and "sfx" not in clip["output"] and has_sfx:
+                wav = get_audio(story_dir, clip, "sfx", clip["sfx"], args.seed + s)
+                clip["output"]["sfx"] = os.path.relpath(wav, story_dir)
+        print("[run] 预配音完成")
+
     # ── 1. 逐镜头生产 ──
     char_ref = None  # 角色锚定图（跨镜头锁角色）
     char_lighting = DEFAULT_LIGHTING
@@ -227,10 +240,10 @@ def main():
             clip["output"]["clip"] = os.path.relpath(clip_path, story_dir)
             if args.chain_frames:
                 prev_frame = extract_last_frame(clip_path, story_dir)
-        if not args.skip_audio and has_tts and clip.get("voice"):
+        if not args.skip_audio and has_tts and clip.get("voice") and "voice" not in clip["output"]:
             wav = get_audio(story_dir, clip, "voice", clip["voice"])
             clip["output"]["voice"] = os.path.relpath(wav, story_dir)
-        if not args.skip_audio and has_sfx and clip.get("sfx") and clip["sfx"] != "无":
+        if not args.skip_audio and has_sfx and clip.get("sfx") and clip["sfx"] != "无" and "sfx" not in clip["output"]:
             wav = get_audio(story_dir, clip, "sfx", clip["sfx"], args.seed + s)
             clip["output"]["sfx"] = os.path.relpath(wav, story_dir)
 
