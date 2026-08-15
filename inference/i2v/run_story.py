@@ -29,7 +29,10 @@ SDXL_URL = "http://127.0.0.1:10331"
 TTS_URL = "http://127.0.0.1:10333"
 SFX_URL = "http://127.0.0.1:10336"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_video"
-DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, text"
+DEFAULT_NEGATIVE = ("blurry, low quality, distorted, watermark, text, wings, shoes, visible feet, deformed, "
+                    "NSFW, suggestive, revealing, mature, sexy, sensual, tight clothing, cleavage, "
+                    "pedestal, platform, base, stand, stage, podium, display stand, floor marker, shadow circle, "
+                    "side view, profile, looking away, turned around, three-quarter view")
 PROMPT_HUB_DIR = "/home/alice/work/agentic/alice-prompt-hub"
 DEFAULT_LIGHTING = "soft warm glow in darkness"
 
