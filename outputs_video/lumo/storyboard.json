@@ -22,7 +22,8 @@
       "camera_move": "FIXED",
       "shot_size": "MEDIUM_SHOT",
       "composition": "rule of thirds",
-      "color": "warm amber against cold blue night"
+      "color": "warm amber against cold blue night",
+      "bg_prompt": "ruined city street at night, collapsed buildings, debris and rubble, faint moonlight through clouds, cold blue tones, atmospheric fog"
     },
     {
       "scene": 2,
@@ -41,7 +42,8 @@
       "camera_move": "FIXED",
       "shot_size": "FULL_SHOT",
       "composition": "leading lines",
-      "color": "warm amber trail in darkness"
+      "color": "warm amber trail in darkness",
+      "bg_prompt": "long ruined street at night, empty road, moonlight casting a path, collapsed buildings on both sides, cold blue tones"
     },
     {
       "scene": 3,
@@ -60,7 +62,8 @@
       "camera_move": "FIXED",
       "shot_size": "LONG_SHOT",
       "composition": "low angle looking up",
-      "color": "cold blue with tiny warm light"
+      "color": "cold blue with tiny warm light",
+      "bg_prompt": "snow-covered ruins at night, falling snowflakes, a giant icy snow monster towering in the distance, cold blue darkness"
     },
     {
       "scene": 4,
@@ -79,7 +82,8 @@
       "camera_move": "FIXED",
       "shot_size": "CLOSE_SHOT",
       "composition": "centered",
-      "color": "warm golden melting the blue"
+      "color": "warm golden melting the blue",
+      "bg_prompt": "melting snow around a warm light source, wet ground reflecting warm golden glow, the snow monster's large feet, steam rising"
     },
     {
       "scene": 5,
@@ -98,7 +102,8 @@
       "camera_move": "FIXED",
       "shot_size": "MEDIUM_CLOSE",
       "composition": "centered",
-      "color": "orange glow on rust"
+      "color": "orange glow on rust",
+      "bg_prompt": "an abandoned rusty robot half-buried in rubble, dark ruins, faint orange glow from the robot's eyes, sparks and dust"
     },
     {
       "scene": 6,
@@ -117,7 +122,8 @@
       "camera_move": "FIXED",
       "shot_size": "MEDIUM_SHOT",
       "composition": "over the shoulder",
-      "color": "warm light on a tearful face"
+      "color": "warm light on a tearful face",
+      "bg_prompt": "a sad little girl sitting among ruins hugging her knees, dim night, cold blue tones, rubble and broken walls around"
     },
     {
       "scene": 7,
@@ -136,7 +142,8 @@
       "camera_move": "FIXED",
       "shot_size": "CLOSE_UP",
       "composition": "centered",
-      "color": "burst of golden light"
+      "color": "burst of golden light",
+      "bg_prompt": "warm golden light blooming in the darkness, tiny sparkles rising into the air, ruined city silhouette, hopeful warmth"
     },
     {
       "scene": 8,
@@ -155,7 +162,8 @@
       "camera_move": "FIXED",
       "shot_size": "LONG_SHOT",
       "composition": "wide vista",
-      "color": "dawn light spreading"
+      "color": "dawn light spreading",
+      "bg_prompt": "dawn breaking over a ruined city, warm golden light spreading across rooftops, soft clouds, hopeful atmosphere"
     }
   ],
   "lighting": "soft warm glow in darkness"

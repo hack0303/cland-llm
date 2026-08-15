@@ -77,10 +77,11 @@ def post_json(url, data, timeout=600):
     return http_json(url, data, timeout)
 
 
-def t2i_workflow(prompt: str, seed: int, char_image: str = None) -> dict:
-    """ComfyUI T2I 工作流模板（Counterfeit 动漫底座 + IPAdapter 定妆锚定）
+def t2i_workflow(prompt: str, seed: int, char_image: str = None, anchor: bool = True) -> dict:
+    """ComfyUI T2I 工作流模板（Counterfeit 底座）
 
-    char_image: 定妆照路径（复制到 ComfyUI input/ 作为 IPAdapter 锚定参考）
+    char_image: 定妆照/脸部锚定路径（anchor=True 时复制到 input/）
+    anchor: False = 移除 IPAdapter（纯场景出图用，背景不受锚定污染）
     """
     with open(os.path.join(BASE, "workflow_t2i_anchor.json")) as f:
         wf = json.load(f)
@@ -88,9 +89,14 @@ def t2i_workflow(prompt: str, seed: int, char_image: str = None) -> dict:
     wf["2"]["inputs"]["text"] = prompt
     wf["3"]["inputs"]["text"] = DEFAULT_NEGATIVE
     wf["5"]["inputs"]["seed"] = seed
-    if char_image:
+    if anchor and char_image:
         import shutil
         shutil.copy(char_image, "/mnt/data/ai_workspace/ComfyUI/input/i2v_char.png")
+    else:
+        # 无锚定模式：移除 IPAdapter 节点，KSampler 直连底座
+        for n in ("8", "9", "10"):
+            wf.pop(n, None)
+        wf["5"]["inputs"]["model"] = ["1", 0]
     return wf
 
 
