@@ -97,13 +97,29 @@ def main():
 
         print(f"[compose] 视频拼接完成: {total:.1f}s")
 
-        # ── 3. 音频轨：adelay 对齐 + amix ──
-        audio_srcs, fc, labels = [], [], []
+        # ── 3. 音频轨：adelay 对齐 + 防重叠截断 + amix ──
+        # 先收集全部音频时间戳（全局秒）
+        audio_events = []  # (全局起点, 类型, 文件)
+        for wav, at in zip(args.voice + args.sfx, args.voice_at + args.sfx_at):
+            audio_events.append((at, "voice" if wav in args.voice else "sfx", wav))
+        if args.bgm:
+            audio_events.append((0.0, "bgm", args.bgm))
+        audio_events.sort()
+        # 每段音频截断到与下一段间隔（防混叠；voice 保底 1s）
+        cut_ends = {}
+        for i, (at, typ, wav) in enumerate(audio_events):
+            nxt = audio_events[i + 1][0] if i + 1 < len(audio_events) else total
+            limit = max(1.0, nxt - at - 0.2)
+            cut_ends[(at, typ, wav)] = limit
+
+        audio_srcs, labels = [], []
         aidx = 0
         # 输入 0 = vconcat（纯视频），音频从输入 1 开始 → [aidx+1:a]
         for wav, at in zip(args.voice + args.sfx, args.voice_at + args.sfx_at):
             ms = int(at * 1000)
-            labels.append(f"[{aidx+1}:a]adelay={ms}|{ms}[a{aidx}]")
+            limit = cut_ends[(at, "voice" if wav in args.voice else "sfx", wav)]
+            # 顺序关键：先 atrim 截原音频，再 adelay 延迟（反序会把延迟静音截掉，语音全丢）
+            labels.append(f"[{aidx+1}:a]atrim=0:{limit:.2f},adelay={ms}|{ms}[a{aidx}]")
             audio_srcs.append(wav)
             aidx += 1
         if args.bgm:

@@ -1,16 +1,174 @@
 {
-  "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"}},
-  "2": {"class_type": "LoadImage", "inputs": {"image": "i2v_ref.png"}},
-  "3": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["1", 2]}},
-  "4": {"class_type": "RepeatLatentBatch", "inputs": {"samples": ["3", 0], "amount": 16}},
-  "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "a cute cat waving its paw, subtle motion, soft lighting, vibrant colors, high quality", "clip": ["1", 1]}},
-  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "blurry, distorted, deformed, bad anatomy, watermark, text", "clip": ["1", 1]}},
-  "7": {"class_type": "ADE_StandardUniformContextOptions", "inputs": {"context_length": 16, "context_stride": 1, "context_overlap": 4}},
-  "8": {"class_type": "ADE_AnimateDiffLoaderWithContext", "inputs": {"model": ["1", 0], "model_name": "mm_sd_v15_v2.ckpt", "beta_schedule": "sqrt_linear (AnimateDiff)", "context_options": ["7", 0], "motion_scale": 1.0}},
-  "9": {"class_type": "IPAdapterUnifiedLoader", "inputs": {"model": ["8", 0], "preset": "STANDARD (medium strength)"}},
-  "10": {"class_type": "IPAdapterAdvanced", "inputs": {"model": ["9", 0], "ipadapter": ["9", 1], "image": ["14", 0], "weight": 0.7, "weight_type": "linear", "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"}},
-  "14": {"class_type": "LoadImage", "inputs": {"image": "i2v_char.png"}},
-  "11": {"class_type": "KSampler", "inputs": {"model": ["10", 0], "seed": 42, "steps": 20, "cfg": 7.0, "sampler_name": "euler", "scheduler": "normal", "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["4", 0], "denoise": 0.8}},
-  "12": {"class_type": "VAEDecode", "inputs": {"samples": ["11", 0], "vae": ["1", 2]}},
-  "13": {"class_type": "SaveAnimatedWEBP", "inputs": {"images": ["12", 0], "filename_prefix": "i2v_test", "fps": 8.0, "lossless": false, "quality": 90, "method": "default"}}
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "i2v_ref.png"
+    }
+  },
+  "3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "2",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "4": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "amount": 16
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "a cute cat waving its paw, subtle motion, soft lighting, vibrant colors, high quality",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, distorted, deformed, bad anatomy, watermark, text",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "7": {
+    "class_type": "ADE_StandardUniformContextOptions",
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4
+    }
+  },
+  "8": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "context_options": [
+        "7",
+        0
+      ],
+      "motion_scale": 1.4
+    }
+  },
+  "9": {
+    "class_type": "IPAdapterUnifiedLoader",
+    "inputs": {
+      "model": [
+        "8",
+        0
+      ],
+      "preset": "STANDARD (medium strength)"
+    }
+  },
+  "10": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "9",
+        0
+      ],
+      "ipadapter": [
+        "9",
+        1
+      ],
+      "image": [
+        "14",
+        0
+      ],
+      "weight": 0.7,
+      "weight_type": "linear",
+      "combine_embeds": "concat",
+      "start_at": 0.0,
+      "end_at": 1.0,
+      "embeds_scaling": "V only"
+    }
+  },
+  "14": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "i2v_char.png"
+    }
+  },
+  "11": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "seed": 42,
+      "steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ],
+      "denoise": 0.8
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "13": {
+    "class_type": "SaveAnimatedWEBP",
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ],
+      "filename_prefix": "i2v_test",
+      "fps": 8.0,
+      "lossless": false,
+      "quality": 90,
+      "method": "default"
+    }
+  }
 }

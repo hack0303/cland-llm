@@ -108,8 +108,25 @@ def get_audio(story_dir, clip, kind, text, seed=None):
     wav = r.get("wav") or r.get("path")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     os.rename(wav, out)
+    # 时长校验：语音超出镜头剩余空间会混叠 → 警告（voice_at + 语音时长 ≤ 镜头时长）
+    if kind == "voice":
+        d = probe_duration(out)
+        remain = clip["duration"] - clip["voice_at"]
+        if d > remain + 0.2:
+            print(f"  [voice] ⚠️ 语音 {d:.1f}s 超出镜头剩余 {remain:.1f}s，合成会截断/混叠；建议精简台词或加长镜头")
     print(f"  [{kind}] {out}")
     return out
+
+
+def probe_duration(path):
+    # ffprobe 不存在（imageio 单文件版 ffmpeg），用 ffmpeg -i 解析 stderr 的 Duration
+    import re as _re
+    r = subprocess.run(["ffmpeg", "-i", path, "-f", "null", "-"], capture_output=True, text=True)
+    m = _re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", r.stderr)
+    if not m:
+        raise RuntimeError(f"无法解析时长: {path}\n{r.stderr[-400:]}")
+    h, mi, s = m.groups()
+    return int(h) * 3600 + int(mi) * 60 + float(s)
 
 
 def extract_last_frame(clip_path, story_dir):
