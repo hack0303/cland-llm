@@ -114,7 +114,8 @@ def main():
         # 输入 0 = vconcat（纯视频），音频从输入 1 开始 → [aidx+1:a]
         for wav, at in zip(args.voice + args.sfx, args.voice_at + args.sfx_at):
             ms = int(at * 1000)
-            labels.append(f"[{aidx+1}:a]loudnorm=I=-16:TP=-1.5:LRA=11,adelay={ms}|{ms}[a{aidx}]")
+            # loudnorm PTS bug 防护：loudnorm 后必须 asetpts 归零再 adelay（否则时间戳爆炸，音频丢失）
+            labels.append(f"[{aidx+1}:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=16000,asetpts=PTS-STARTPTS,adelay={ms}|{ms}[a{aidx}]")
             audio_srcs.append(wav)
             aidx += 1
         if args.bgm:
@@ -130,7 +131,7 @@ def main():
             amap = "[aout]"
             run(["ffmpeg", "-y", "-i", vconcat] + sum([["-i", s] for s in audio_srcs], []) +
                 ["-filter_complex", ";".join(fc), "-map", "0:v", "-map", amap,
-                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", final])
+                 "-c:v", "copy", "-c:a", "aac", "-ar", "16000", "-b:a", "192k", final])
         else:
             run(["ffmpeg", "-y", "-i", vconcat, "-c", "copy", final])
 

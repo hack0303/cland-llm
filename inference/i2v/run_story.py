@@ -152,7 +152,8 @@ def get_clip(story_dir, clip, frame_path, seed, ref_image=None):
         print(f"  [clip] 已存在，跳过: {out}")
         return out
     assert frame_path, "缺少参考图：SDXL 未运行或出图失败，I2V 必须有输入图"
-    frames = max(8, int(round(clip["duration"] * 8)))  # 8fps × duration
+    # 速度修复：I2V 一律 16 帧（140s），时长靠合成 tpad 补帧（32 帧 500s+ 慢 4 倍）
+    frames = 16
     cmd = [sys.executable, os.path.join(BASE, "generate.py"),
            "--image", frame_path, "--prefix", f"scene{clip['scene']:03d}",
            "--frames", str(frames), "--seed", str(seed),
@@ -259,9 +260,12 @@ def main():
     if args.character and not args.no_character_lock:
         with open(args.character) as f:
             ch = json.load(f)
-        char_ref = os.path.join(os.path.dirname(os.path.abspath(args.character)), ch["files"]["front"])
+        char_dir = os.path.dirname(os.path.abspath(args.character))
+        # 优先脸部裁剪锚定（只锁脸，避免全身图背景/站姿污染 + 脸占比小锁不牢）
+        face_anchor = os.path.join(char_dir, "face_anchor.png")
+        char_ref = face_anchor if os.path.exists(face_anchor) else os.path.join(char_dir, ch["files"]["front"])
         char_lighting = ch.get("lighting", DEFAULT_LIGHTING)
-        print(f"[run] 角色锚定: {char_ref} | lighting: {char_lighting}")
+        print(f"[run] 角色锚定: {os.path.basename(char_ref)} | lighting: {char_lighting}")
     lighting = sb.get("lighting") or char_lighting  # 分镜顶层可覆盖
     prev_frame = None  # 首帧接力（--chain-frames）
     for clip in clips:
