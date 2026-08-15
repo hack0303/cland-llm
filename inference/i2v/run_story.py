@@ -251,23 +251,31 @@ def main():
     with open(sb_path, "w") as f:
         json.dump(sb, f, ensure_ascii=False, indent=2)
 
-    # ── 2. 合成大视频（全局时间戳 = 前序镜头累计 + 镜头内偏移）──
-    clip_files, voice_args, sfx_args = [], [], []
+    # ── 2. 合成大视频（音频优先：镜头时长按语音实际长度动态撑开，声音零截断）──
+    clip_files, voice_args, sfx_args, durations = [], [], [], []
     t_global = 0.0
     for clip in clips:
         clip_files.append(os.path.join(story_dir, clip["output"]["clip"]))
+        v_len = 0.0
         if "voice" in clip["output"]:
+            v_len = probe_duration(os.path.join(story_dir, clip["output"]["voice"]))
             voice_args += ["--voice", os.path.join(story_dir, clip["output"]["voice"]),
                            "--voice-at", str(round(t_global + clip["voice_at"], 2))]
         if "sfx" in clip["output"]:
             sfx_args += ["--sfx", os.path.join(story_dir, clip["output"]["sfx"]),
                          "--sfx-at", str(round(t_global + clip["sfx_at"], 2))]
-        t_global += clip["duration"]
+        # 动态时长：镜头必须装得下完整语音（voice_at + 语音长度 + 0.3s 余量）
+        target = max(clip["duration"], clip["voice_at"] + v_len + 0.3)
+        if target > clip["duration"] + 0.05:
+            print(f"[run] 镜头{clip['scene']}: 时长 {clip['duration']}s → {target:.1f}s（语音 {v_len:.1f}s，补帧）")
+        durations.append(round(target, 2))
+        t_global += target
 
     print(f"[run] 合成 {len(clip_files)} 个片段，总时长 {t_global:.1f}s")
     final = os.path.join(story_dir, f"{prefix}_final.mp4")
     subprocess.run([sys.executable, os.path.join(BASE, "compose.py"),
                     "--clips"] + clip_files + voice_args + sfx_args +
+                   ["--durations"] + [str(d) for d in durations] +
                    ["--prefix", f"{prefix}_final", "--outdir", story_dir], check=True)
     print(f"[run] 完成: {final}")
 
