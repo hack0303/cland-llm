@@ -53,11 +53,32 @@
 | `clips[].sfx` | string | 可选 | 中文音效描述；`"无"`=无音效 |
 | `clips[].sfx_at` | float | 条件必填 | 镜头内偏移秒，须 `< duration` |
 | `clips[].output` | object | 可选 | **流水线执行后回填**的实际文件路径（相对故事目录），生产前可为空 |
+| `clips[].camera_move` | string | 可选 | 运镜枚举：`FIXED PUSH PULL PAN TRACK ORBIT HIGH_ANGLE LOW_ANGLE HANDHELD`（默认 FIXED） |
+| `clips[].shot_size` | string | 可选 | 景别枚举：`LONG_SHOT FULL_SHOT MEDIUM_SHOT MEDIUM_CLOSE CLOSE_SHOT CLOSE_UP EXTREME_CLOSE_UP`（默认 MEDIUM_SHOT） |
+| `clips[].composition` | string | 可选 | 构图（英文，默认 centered） |
+| `clips[].color` | string | 可选 | 色彩（英文，默认 natural colors） |
+| `clips[].aspect_ratio` | string | 可选 | 画幅枚举：`WIDESCREEN_169 CINEMA_239 CLASSIC_43 VERTICAL_916`（默认 WIDESCREEN_169） |
+| 顶层 `lighting` | string | 可选 | 全局光影段（供 prompt-hub story 渲染；缺省时用 character.json 的 lighting） |
 
 ### 时间轴换算
 
 - 镜头 k 的**全局起始时间** = Σ(clips[0..k-1].duration)
 - 配音/音效的全局时间 = 镜头全局起始 + 镜头内 `*_at` 偏移（compose.py 的 `--voice-at/--sfx-at` 用全局时间）
+
+### 电影语言渲染（v1.2）
+
+镜头含 `camera_move/shot_size/composition/color/aspect_ratio` 任一字段时，run_story 调用 **prompt-hub story** 渲染最终提示词（电影语言词库）：
+
+```bash
+prompt-hub story --style "{顶层 style}" --lighting "{顶层 lighting 或 character.lighting}" \
+  --image-prompt "{clip.image_prompt}" --shot-no {scene} \
+  --camera-move {camera_move} --shot-size {shot_size} \
+  --composition {composition} --color {color} --aspect-ratio {aspect_ratio}
+```
+
+输出模板：`storyboard, shot N, {运镜}, {景别}, scene: {内容}, composition: ..., lighting: ..., color: ..., art style: ..., cinematic, 8k, highly detailed, clean image, {画幅}`
+
+无字段时保持旧拼接（`{style}, {image_prompt}`），向后兼容。
 
 ## 二、提示词书写要求（v1.1）
 
@@ -144,3 +165,4 @@ python3 inference/i2v/compose.py --clips ... --voice ... --prefix story001_final
 |---|---|---|
 | 1.0 | 2026-08-15 | 初版：schema + 目录结构 + 工具接口定义 |
 | 1.1 | 2026-08-15 | 新增：提示词书写要求（image_prompt 四段式 / motion_prompt 能力边界 / 一致性铁律） |
+| 1.2 | 2026-08-15 | 新增：电影语言字段（camera_move/shot_size/composition/color/aspect_ratio）+ prompt-hub story 渲染；motion 允许具体动作描述 |

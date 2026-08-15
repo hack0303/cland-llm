@@ -29,7 +29,9 @@ SDXL_URL = "http://127.0.0.1:10331"
 TTS_URL = "http://127.0.0.1:10333"
 SFX_URL = "http://127.0.0.1:10336"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_video"
-DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, deformed, bad anatomy, extra limbs, poorly drawn hands, text, jpeg artifacts, ugly, duplicate, oversaturated, extra fingers"
+DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, text"
+PROMPT_HUB_DIR = "/home/alice/work/agentic/alice-prompt-hub"
+DEFAULT_LIGHTING = "soft warm glow in darkness"
 
 
 def healthy(url, timeout=4):
@@ -62,12 +64,32 @@ def post_json(url, data, timeout=600):
         return json.loads(r.read())
 
 
-def get_image(story_dir, clip, style, seed):
+def render_shot_prompt(clip, style, lighting):
+    """电影语言字段存在时用 prompt-hub story 渲染；否则旧拼接（向后兼容）"""
+    has_film = any(k in clip for k in ("camera_move", "shot_size", "composition", "color", "aspect_ratio"))
+    if not has_film:
+        return f"{style}, {clip['image_prompt']}"
+    cmd = ["uv", "run", "prompt-hub", "story",
+           "--style", style, "--lighting", lighting or DEFAULT_LIGHTING,
+           "--image-prompt", clip["image_prompt"], "--shot-no", str(clip["scene"]),
+           "--camera-move", clip.get("camera_move", "FIXED"),
+           "--shot-size", clip.get("shot_size", "MEDIUM_SHOT"),
+           "--composition", clip.get("composition", "centered"),
+           "--color", clip.get("color", "natural colors"),
+           "--aspect-ratio", clip.get("aspect_ratio", "WIDESCREEN_169")]
+    r = subprocess.run(cmd, cwd=PROMPT_HUB_DIR, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        print(f"  [frame] ⚠️ prompt-hub story 渲染失败({r.stderr[-200:]})，回退旧拼接")
+        return f"{style}, {clip['image_prompt']}"
+    return r.stdout.strip()
+
+
+def get_image(story_dir, clip, style, seed, lighting):
     out = os.path.join(story_dir, "frames", f"scene{clip['scene']:03d}.png")
     if os.path.exists(out):
         print(f"  [frame] 已存在，跳过: {out}")
         return out
-    prompt = f"{style}, {clip['image_prompt']}"
+    prompt = render_shot_prompt(clip, style, lighting)
     r = post_json(SDXL_URL + "/generate", {"prompt": prompt, "steps": 30, "seed": seed,
                                             "negative_prompt": DEFAULT_NEGATIVE})
     img = r.get("image") or r.get("path")
@@ -168,11 +190,14 @@ def main():
 
     # ── 1. 逐镜头生产 ──
     char_ref = None  # 角色锚定图（跨镜头锁角色）
+    char_lighting = DEFAULT_LIGHTING
     if args.character and not args.no_character_lock:
         with open(args.character) as f:
             ch = json.load(f)
         char_ref = os.path.join(os.path.dirname(os.path.abspath(args.character)), ch["files"]["front"])
-        print(f"[run] 角色锚定: {char_ref}")
+        char_lighting = ch.get("lighting", DEFAULT_LIGHTING)
+        print(f"[run] 角色锚定: {char_ref} | lighting: {char_lighting}")
+    lighting = sb.get("lighting") or char_lighting  # 分镜顶层可覆盖
     prev_frame = None  # 首帧接力（--chain-frames）
     for clip in clips:
         s = clip["scene"]
@@ -182,7 +207,7 @@ def main():
                 print("  [frame] 跳过：SDXL 未运行")
                 frame = prev_frame if args.chain_frames else None
             else:
-                frame = get_image(story_dir, clip, style, args.seed + s)
+                frame = get_image(story_dir, clip, style, args.seed + s, lighting)
                 clip["output"]["frame"] = os.path.relpath(frame, story_dir)
                 # 镜头 1 出图即定妆照（后续镜头 IPAdapter 锚定它）
                 if char_ref is None:

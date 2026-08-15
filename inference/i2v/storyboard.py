@@ -24,35 +24,44 @@ SYSTEM_PROMPT = """你是游戏短片分镜导演。根据用户提供的故事�
 JSON 结构：
 {
   "title": "标题（中文）",
-  "style": "整体画风（英文，如 cute cartoon, soft lighting）",
+  "style": "整体画风（英文，如 cute healing fantasy）",
+  "lighting": "全局光影段（英文，如 soft warm glow in darkness）",
   "clips": [
     {
       "scene": 1,
-      "image_prompt": "画面提示词（英文）",
+      "image_prompt": "画面内容（英文：主体+动作+环境细节，不含风格/光影/画幅）",
       "motion_prompt": "运动提示词（英文）",
       "voice": "旁白/台词（中文，该镜头说的话）",
       "voice_at": 0.0,
       "sfx": "音效描述（中文，如 风声、脚步声）",
       "sfx_at": 0.0,
-      "duration": 2
+      "duration": 2,
+      "camera_move": "FIXED",
+      "shot_size": "MEDIUM_SHOT",
+      "composition": "centered",
+      "color": "natural colors",
+      "aspect_ratio": "WIDESCREEN_169"
     }
   ]
 }
 
 提示词书写要求（必须遵守）：
-- image_prompt 英文四段式：{主体} {姿态}, {环境}, {光照}, {风格+质量词}，15~30 词一句；
+- image_prompt 英文描述镜头画面内容（主体+动作+环境），15~30 词一句；
   **角色描述短语跨镜头固定复用**（同一角色各镜头用一模一样的开头，只换动作/环境）；禁止否定词
-- motion_prompt 只写轻微运动（AnimateDiff 能力边界）：subtle motion, gentle breeze, soft breathing,
-  slight waving, blinking, leaves drifting 等；**禁止 run/jump/somersault/fighting/explosion/fast pan 等大幅度运动词**；统一 subtle/gentle/soft 开头
-- voice 一句一镜 ≤30 字口语化；sfx ≤10 字短描述，无音效写"无"
+- motion_prompt 写具体轻微动作（AnimateDiff 能力边界内，可具体化）：如 walking forward slowly, lantern swinging gently,
+  gentle glow pulsing, snow drifting, hair moving softly；**禁止 run/jump/somersault/fighting/explosion/fast pan 等大幅度运动词**
+- voice 一句一镜，**须能在镜头 duration 内读完（2s 镜头台词 ≤1.6s 语音）**，口语化；台词长则加大 duration（最多 4s）
+- sfx ≤10 字短描述，无音效写"无"
 - 相邻镜头场景词连贯（同一地点用相同英文表达）
+- 电影语言字段（camera_move/shot_size/composition/color/aspect_ratio）按镜头情绪选择，不要每镜相同
 
 其他规则：
-- clips 数量 = 故事自然分镜数（通常 3~8 个），每个镜头 duration 默认 2 秒
+- clips 数量 = 故事自然分镜数（通常 3~8 个），duration 按台词长度 2~4 秒
 - voice 是镜头开始时朗读的台词，voice_at 用镜头内偏移秒数（须小于 duration）
 - 只输出 JSON 本身，不要 markdown 代码块、不要解释"""
 
 SCHEMA_KEYS = ["scene", "image_prompt", "motion_prompt", "voice", "voice_at", "sfx", "sfx_at", "duration"]
+OPTIONAL_KEYS = ["camera_move", "shot_size", "composition", "color", "aspect_ratio"]
 
 
 def call_llm(story: str, max_tokens: int = 4096, retries: int = 2) -> dict:
