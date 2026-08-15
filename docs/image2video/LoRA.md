@@ -1,94 +1,138 @@
 ---
-title: "Lumo 角色 LoRA 训练方案"
-summary: "用 LoRA 固化 Lumo 角色形象（角色一致性治本方案）：数据准备、训练配置、与现有锚定链路的整合"
+title: "Lumo 角色 LoRA 训练技术文档"
+summary: "SD1.5 角色 LoRA 完整技术文档：数据规范、训练配置（diffusers/kohya）、质量评估、本机执行步骤"
 read_when:
-  - "训练 Lumo 或其他原创角色的 LoRA"
-  - "角色一致性需要治本（摆脱抽卡+提示词碰运气）"
-  - "评估本机（P40）LoRA 训练可行性"
+  - "训练/复训 Lumo 或任何原创角色 LoRA"
+  - "评估 LoRA 数据质量与训练效果"
 scope:
   - cland-llm
-status: "planning"
+status: "active"
 updated: "2026-08-15"
 ---
 
-# Lumo 角色 LoRA 训练方案
+# Lumo 角色 LoRA 训练技术文档
 
-## 一、为什么需要 LoRA（治本）
+## 一、训练目标
 
-当前角色一致性靠**三层软约束**：desc 提示词 + 锚定图（IPAdapter）+ 首帧 img2img。问题是：
+- **模型**：`lumo_v1.safetensors`（SD1.5 系 LoRA，rank 32）
+- **底座**：Counterfeit-V3.0_fp16（与出图/AnimateDiff 同底座）
+- **触发词**：`1lumo`（加数字前缀减少与真实词冲突，社区惯例）
+- **双用途**：出图（定妆/资产）+ 视频（AnimateDiff 注入后仍生效）
 
-| 现状 | 痛点 |
-|---|---|
-| desc 提示词 | 每次抽卡碰运气（脸/脚/擦边都要人工筛） |
-| IPAdapter 锚定 | 只锁"视频阶段"，SDXL 出图阶段仍漂移 |
-| 抽卡 | 5 张挑 1 张，废图率高 |
+## 二、数据规范（关键：多样性 ≥ 数量）
 
-**LoRA 后**：`1lumo` 一个触发词 → 任何底座/镜头稳定生成 Lumo 形象——抽卡成本消失，出图阶段就锁死。
+### 2.1 最低合格标准
 
-## 二、可行性（P40 + 15GB RAM）
+| 维度 | 要求 | 说明 |
+|---|---|---|
+| 数量 | **20~30 张** | <15 张过拟合风险高 |
+| 姿态多样性 | ≥3 种姿态（站立/挥手/行走/持物…） | 全站姿 → 只会画站桩 |
+| 表情 | ≥3 种（微笑/惊讶/悲伤） | 特写图提供面部细节 |
+| 画风一致 | **全部同底座生成**（Counterfeit-V3） | 混底座训练会学出"四不像" |
+| 视角 | 以正面为主 + 少量 3/4 侧 | 不必三视图（back 生成不可靠） |
+| 构图 | 全身 70% + 特写 30% | 特写给脸部细节，全身给比例 |
+| 背景 | 统一白底/纯色 | 背景干扰特征提取 |
 
-| 项 | 评估 |
-|---|---|
-| 底座 | SD1.5（Counterfeit-V3.0_fp16）——LoRA 训练生态最成熟 |
-| 显存 | SD1.5 LoRA 训练（512²，batch 2）≈ 8-10GB ✅（GPU1 余量） |
-| 数据量 | 10~15 张定妆/动作/表情图（已有候选资产可复用） |
-| 训练时长 | 512² × 15 图 × 10 epochs ≈ **30-60 分钟**（P40） |
-| 工具 | kohya sd-scripts 或 diffusers LoRA（本机 base 环境可装） |
-
-## 三、训练数据准备
+### 2.2 Caption 规范
 
 ```
-outputs_character/lumo/lora_dataset/
-├── 801.png  → 提示词: 1lumo, full body, front view, standing, plain background
-├── 802.png  → 同上（多 seed 多样本）
-├── happy.png  → 1lumo, close up, smiling
-├── walking.png → 1lumo, full body, walking
-└── ...
+每张图配同名 .txt，格式：
+1lumo, <简短描述>
 ```
 
-- 来源：candidates_cf（801-805）+ Counterfeit 重新生成动作/表情资产（统一底座，保证画风一致）
-- 关键：**训练集与目标底座同为 Counterfeit-V3**（同源训练质量最高）
-- 配文（caption）：`1lumo` 触发词 + 简单描述（不用长提示词，防过拟合到提示词）
+| 图 | caption 示例 |
+|---|---|
+| 正面定妆 | `1lumo, a tiny round glowing light fairy, standing, front view, full body` |
+| 挥手 | `1lumo, waving one hand, cheerful pose` |
+| 微笑特写 | `1lumo, smiling happily, close up, headshot` |
 
-## 四、训练配置（kohya sd-scripts 参考）
+- **不要**写长提示词（防过拟合到 prompt 文本而非形象）
+- 触发词 `1lumo` 每张必带（训练"这个词 = 这个角色"的映射）
+- 描述用短词（standing/waving/happy），不含底座无关属性（画风词由底座负责）
+
+### 2.3 数据清单（Lumo v1）
+
+| 组 | 数量 | 来源 | 状态 |
+|---|---|---|---|
+| 正面定妆 | 12 | candidates_cf 801-812（811 为定妆照） | ✅ 已有 |
+| 动作（挥手/行走/持物/坐姿） | 6~8 | Counterfeit 新生成 | ⏳ 待生成（10s/张） |
+| 表情（微笑/惊讶/悲伤） | 4~6 | Counterfeit 新生成（特写） | ⏳ 待生成 |
+
+合计 **22~26 张** → 达标。数据目录：`inference/i2v/lora/dataset/`
+
+## 三、训练配置
+
+### 3.1 方案选择：diffusers 官方脚本（轻量）
 
 ```bash
-# 参数要点（SD1.5 LoRA，512²）
---network_dim 32           # LoRA 秩（32 够用）
---network_alpha 16
---learning_rate 1e-4
---train_batch_size 2
---resolution 512
---max_train_epochs 10
---trigger_word "1lumo"
---output_name lumo_v1
+# 依赖（base 环境已装 torch/diffusers/transformers；补装）
+pip install accelerate peft datasets -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 脚本
+diffusers/examples/text_to_image/train_text_to_image_lora.py
 ```
 
-## 五、整合到现有管线
+### 3.2 关键超参
 
+| 参数 | 值 | 理由 |
+|---|---|---|
+| resolution | 512 | 底座训练分辨率 |
+| rank (network_dim) | 32 | 角色 LoRA 通用值 |
+| alpha (network_alpha) | 16 | alpha=rank/2 防过拟合 |
+| learning_rate | 1e-4 | SD1.5 LoRA 标准 |
+| batch_size | 2 | P40 显存 8-10GB |
+| epochs | 10 | 小数据防过拟合 |
+| lr_scheduler | constant | 简单稳定 |
+| 触发词 | `1lumo` | caption 内嵌 |
+
+### 3.3 显存/耗时（P40 预估）
+
+- 训练峰值显存：~8-10GB（batch 2，512²）→ GPU1 可跑（与 ComfyUI 错峰）
+- 耗时：25 张 × 10 epochs × ~2s/step ≈ **30-50 分钟**
+- 内存：RAM ~4-6GB（15GB OK）
+
+## 四、质量评估（训练后必做）
+
+| 测试 | 方法 | 通过标准 |
+|---|---|---|
+| 触发响应 | 同 prompt：有/无 `1lumo` 各出 2 张 | 有触发词 = Lumo 形象；无 = 泛化形象 |
+| 姿态泛化 | 新姿态 prompt（不存在的姿态，如坐姿） | 能画 Lumo 形象的新姿态（非站桩） |
+| 稳定性 | 同一 prompt 5 个 seed | 形象一致（脸/斗篷/比例稳定） |
+| 视频兼容 | AnimateDiff workflow 加 LoRA 节点跑 1 镜头 | 动画中角色稳定 |
+| 无擦边 | 纯真约束负面词下抽查 | 无 NSFW 倾向 |
+
+## 五、本机执行步骤
+
+```bash
+# 1. 数据生成（Counterfeit，ComfyUI 抽卡）——补齐动作/表情 ~10 张
+python3 inference/i2v/lora/prepare_data.py   # （待写：调 ComfyUI 批量出图 + caption）
+
+# 2. 训练（GPU1，与 ComfyUI 错峰）
+accelerate launch train_lora.py \
+  --pretrained_model_name_or_path Counterfeit-V3.0_fp16 路径 \
+  --dataset_name inference/i2v/lora/dataset \
+  --output_dir inference/i2v/lora/output \
+  --resolution 512 --train_batch_size 2 --max_train_epochs 10 \
+  --learning_rate 1e-4 --rank 32 --seed 42
+
+# 3. 评估（对比抽卡）
+# 4. 通过 → 产出 lumo_v1.safetensors → 接入 char_sheet prompt（desc → 1lumo）
 ```
-训练后：
-char_sheet.py / 分镜 prompt 里 desc 前加 "1lumo, "（或替换角色短语）
-    ↓
-Counterfeit-V3 + 1lumo → 出图稳定 Lumo 形象（不再抽卡）
-    ↓
-锚定图（IPAdapter）+ 首帧（img2img）仍是双保险（LoRA 为主，锚定兜底）
-```
 
-- 角色短语从"desc 描述"升级为"1lumo 触发词"——**desc 简化为 LoRA 不覆盖的细节**（斗篷颜色/道具变化）
-- 与 IPAdapter 并存：LoRA 锁"长相"，锚定锁"镜头内"，互不冲突
+## 六、风险与规避
 
-## 六、执行计划
+| 风险 | 规避 |
+|---|---|
+| 数据少过拟合 | epochs ≤10 + alpha=16 + 数据多样性补齐 |
+| 姿态过拟合（站桩） | 动作/表情数据占比 ≥40% |
+| 底座混风格 | 全部 Counterfeit 同源生成 |
+| 触发词冲突 | 用 `1lumo`（数字前缀） |
+| 训练与 I2V 抢 GPU | 错峰：重跑完成后启动训练 |
+| 效果不佳 | 回到锚定链路兜底（IPAdapter + 抽卡仍在） |
 
-- [ ] 1. Counterfeit 重生成训练集（定妆 5 + 动作 3 + 表情 3 ≈ 11 张，~2 分钟）
-- [ ] 2. 配 caption（1lumo 触发词 + 短描述）
-- [ ] 3. 安装 kohya sd-scripts（或 diffusers 简易脚本）到独立 venv
-- [ ] 4. 训练（30-60 分钟，GPU1 与 ComfyUI 错开）
-- [ ] 5. 验证：同 prompt 有/无 1lumo 对比抽卡
-- [ ] 6. 通过后：更新 char_sheet 提示词模板（desc → 1lumo 触发）
+## 七、验收标准
 
-## 七、风险
-
-- P40 训练慢 → 用 512² + batch 2 + 少 epoch，先出 v1 验证
-- 数据量少（11 张）→ 过拟合风险：epoch 控制在 10 以内，加正则化（网络 alpha 16）
-- 与 Counterfeit 同源训练 → 换底座（如 SDXL）时 LoRA 不通用（可接受，当前底座已定版）
+- [ ] 触发词响应稳定（5 seed 形象一致）
+- [ ] 姿态泛化（新姿态可画）
+- [ ] 视频链路兼容（AnimateDiff + LoRA 节点）
+- [ ] 出图阶段不再需要长 desc（`1lumo` 即出）
