@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """SDXL 常驻 API 服务 (Tesla P40 / FP16) — 模型常驻显存，即调即出"""
 import argparse
+import threading
 import time
 
 import torch
@@ -11,6 +12,9 @@ import uvicorn
 
 MODEL_DIR = "/mnt/data/ai_workspace/models/stable-diffusion-xl-base-1.0"
 app = FastAPI(title="SDXL Image Service (INT8)")
+
+# diffusers 调度器非线程安全（并发请求共享 step_index 会越界 500）→ 全局锁串行化
+GEN_LOCK = threading.Lock()
 
 
 class GenRequest(BaseModel):
@@ -47,15 +51,16 @@ def health():
 def generate(req: GenRequest):
     g = torch.Generator("cpu").manual_seed(req.seed)  # 8bit 模式下 VAE 在 CPU，需 cpu generator
     t0 = time.time()
-    img = pipe(
-        prompt=req.prompt,
-        negative_prompt=req.negative_prompt,
-        num_inference_steps=req.steps,
-        width=req.width,
-        height=req.height,
-        guidance_scale=req.guidance_scale,
-        generator=g,
-    ).images[0]
+    with GEN_LOCK:  # 串行化：P40 单卡并发无收益，防调度器状态竞争
+        img = pipe(
+            prompt=req.prompt,
+            negative_prompt=req.negative_prompt,
+            num_inference_steps=req.steps,
+            width=req.width,
+            height=req.height,
+            guidance_scale=req.guidance_scale,
+            generator=g,
+        ).images[0]
     dt = time.time() - t0
     out_path = f"/mnt/data/ai_workspace/outputs/sdxl_{int(t0)}_{req.seed}.png"
     import os
