@@ -55,8 +55,11 @@ def anim_shot(frame_path: str, face_anchor: str, seed: int, frames: int = 16,
             if st.get("completed"):
                 for o in h[pid]["outputs"].values():
                     for img_ in o.get("images", []):
+                        fname = img_["filename"]
+                        sub = img_.get("subfolder", "")
+                        path = os.path.join("/mnt/data/ai_workspace/ComfyUI/output", sub, fname)
                         print(f"  [anim] I2V 完成 {time.time()-t0:.0f}s")
-                        return f"/mnt/data/ai_workspace/ComfyUI/output/{img_['filename']}"
+                        return path
             if st.get("status_str") == "error":
                 raise RuntimeError(f"动画失败: {st.get('messages',[st])[-1]}")
         if time.time() - t0 > 900:

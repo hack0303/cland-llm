@@ -75,7 +75,11 @@
         "7",
         0
       ],
-      "motion_scale": 1.1
+      "motion_scale": 1.1,
+      "motion_lora": [
+        "15",
+        0
+      ]
     }
   },
   "9": {
@@ -169,6 +173,13 @@
       "lossless": false,
       "quality": 90,
       "method": "default"
+    }
+  },
+  "15": {
+    "class_type": "ADE_AnimateDiffLoRALoader",
+    "inputs": {
+      "name": "v2_lora_ZoomIn.ckpt",
+      "strength": 0.6
     }
   }
 }
