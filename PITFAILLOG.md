@@ -117,3 +117,54 @@
 - **根因**：`adelay=2300,atrim=0:1.8` 先插入 2.3s 静音再截取前 1.8s——截掉的 1.8s 全是插入的静音，语音内容（2.3s 之后）被剪没
 - **修复**：顺序反转为 `atrim=0:{limit},adelay={ms}|{ms}`（先截原音频，再延迟到目标位置）
 - **预防**：ffmpeg filter 链里时间偏移类 filter（adelay/atrim/setpts）严格按"先内容后位置"排序；合成后用 volumedetect 分段验证每段能量
+
+## [音频] loudnorm 双坑：采样率 192kHz + PTS 爆炸（无声）
+
+- **日期**：2026-08-16 · **模块**：V1/V2 音频合成（compose.py）
+- **症状**：合成后成片无声/播放异常；ffmpeg 显示 Audio 96000Hz、位速 27Mbps 异常；提取音频流时长 488 万小时
+- **根因**：① loudnorm 内部 192kHz 处理，输出采样率被抬到 192kHz（源 16kHz）；② loudnorm 输出流的 PTS 异常（缓冲/时间基 bug），多路 amix 后某路 PTS 爆炸 → mux 时长 488 万小时
+- **修复**：loudnorm 后链 `aresample=16000,asetpts=PTS-STARTPTS`；**amix 后也要 `asetpts=PTS-STARTPTS`**（amix 输出的时间基异常）
+- **预防**：loudnorm 必须搭配 aresample+asetpts；合成后验证三件套：采样率 16kHz / 位速 <200k / 音频解码时长 ≈ 视频时长
+
+## [ComfyUI] 工作流模板提示词残留（case001 的猫引导每镜头动画）
+
+- **日期**：2026-08-16 · **模块**：workflow_i2v.json 节点 5/6
+- **症状**：动画效果不对（角色往猫方向生成、运动语义错）——排查发现正向提示词还是 case001 的 "a cute cat waving its paw, subtle motion"
+- **根因**：workflow JSON 是模板，节点 5/6 的 text 是静态字段；跑 Lumo 时只动态改了 image/seed/帧数，**没改提示词** → 模板残留
+- **修复**：pipe_anim 动态写入节点 5（分镜 motion_prompt）+ 节点 6（全约束负向）
+- **预防**：workflow 模板的"内容字段"（提示词）必须由调用方显式覆盖；排查效果问题时先检查提交的工作流内容（POST /prompt 的 body 可回看）
+
+## [ComfyUI] AnimateDiff Motion LoRA 用法三坑（目录/参数名/依赖环）
+
+- **日期**：2026-08-16 · **模块**：Motion LoRA 接入
+- **症状**：① LoRA 选项列表空（放错目录）；② 400 报 required_input_missing: name；③ Dependency cycle detected
+- **根因**：
+  - Motion LoRA 目录是 `models/animatediff_motion_lora/`（不是 loras/）
+  - ADE_AnimateDiffLoRALoader 参数是 `name`（不是 lora_name），且**不需要 model 输入**（纯输出 MOTION_LORA 对象）
+  - 若把 loader 的 model 输入接回 ADE loader 的 model → 依赖环
+- **修复**：目录放对 + name 参数 + 节点 15 只接 name/strength，输出接 ADE loader 的 motion_lora 输入
+- **预防**：新节点先查 object_info（参数名/输入输出/目录映射），再改 workflow；400 错误信息有 node_errors 明细
+
+## [ComfyUI] prompt 缓存命中：同 seed 提交秒回 completed 但输出文件不存在
+
+- **日期**：2026-08-16 · **模块**：pipe_anim
+- **症状**：I2V 提交 5 秒返回 completed，history 有输出记录，但 output 目录找不到文件
+- **根因**：ComfyUI 对相同工作流（同 seed/同输入）返回缓存结果；旧记录的输出文件已被清理 → history 有、磁盘无
+- **修复**：换 seed（pipe_anim seed 500+）；规避缓存
+- **预防**：批量任务用递增 seed；取输出后必须验证文件存在（FileNotFoundError 兜底）
+
+## [路径] ComfyUI 输出可能带 subfolder，硬拼 output/ 找不到
+
+- **日期**：2026-08-16 · **模块**：pipe_anim
+- **症状**：FileNotFoundError: output/anim_s301_00001_.webp（history 记录存在但路径错）
+- **根因**：history 输出 image 对象有 filename + subfolder 字段；部分节点输出带 subfolder 子目录，硬拼 `output/{filename}` 漏了 subfolder
+- **修复**：`os.path.join(output_dir, img.get("subfolder",""), img["filename"])`
+- **预防**：所有 ComfyUI 输出路径统一从 history 的 filename+subfolder 拼接
+
+## [流程] storyboard output 字段残留导致"已存在跳过"误判
+
+- **日期**：2026-08-16 · **模块**：run_story Phase 0 配音
+- **症状**：清空 audio 目录后重跑，配音全跳过（Phase 0 完成但 audio 空）
+- **根因**：判断条件用 `"voice" not in clip["output"]`（字段残留判断），storyboard.json 上一轮回填的 output 字段还在 → 误判已存在
+- **修复**：改为**文件存在判断**（os.path.exists(audio/sceneXXX_voice.wav)）
+- **预防**：幂等判断一律以"产物文件存在"为准，不要以元数据字段为准（字段可残留/可伪造）

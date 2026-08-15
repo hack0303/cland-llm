@@ -26,8 +26,9 @@ FPS = 8
 
 
 def anim_shot(frame_path: str, face_anchor: str, seed: int, frames: int = 16,
-              steps: int = 20, denoise: float = 0.8) -> str:
-    """白底角色 I2V → webp 路径"""
+              steps: int = 20, denoise: float = 0.8, motion_prompt: str = "",
+              negative: str = "") -> str:
+    """白底角色 I2V → webp 路径（motion_prompt 动态写入节点 5）"""
     import shutil
     from PIL import Image as PILImage
     # 首帧（白底角色图）→ input/i2v_ref.png
@@ -44,6 +45,11 @@ def anim_shot(frame_path: str, face_anchor: str, seed: int, frames: int = 16,
     wf["4"]["inputs"]["amount"] = frames
     wf["11"]["inputs"].update(steps=steps, seed=seed, denoise=denoise)
     wf["13"]["inputs"].update(filename_prefix=f"anim_s{seed}", fps=FPS)
+    # 动态提示词：节点 5 = 分镜 motion_prompt；节点 6 = 全约束负向
+    if motion_prompt:
+        wf["5"]["inputs"]["text"] = motion_prompt
+    if negative:
+        wf["6"]["inputs"]["text"] = negative
     pid = http_json(f"{COMFY_URL}/prompt", {"prompt": wf}, timeout=120)["prompt_id"]
     import time
     t0 = time.time()
@@ -92,7 +98,7 @@ def main():
     ap.add_argument("--character", required=True)
     ap.add_argument("--prefix", required=True)
     ap.add_argument("--scene", type=int, default=0)
-    ap.add_argument("--seed", type=int, default=300)
+    ap.add_argument("--seed", type=int, default=500)
     ap.add_argument("--skip-alpha", action="store_true")
     args = ap.parse_args()
 
@@ -127,8 +133,12 @@ def main():
         if os.path.exists(anim_mp4) and (args.skip_alpha or seq_ok):
             print(f"  [anim] 已存在: scene{s:03d}")
             continue
-        print(f"  [anim] 镜头{s}: I2V 出片中...")
-        webp = anim_shot(frame, face_anchor, args.seed + s)
+        print(f"  [anim] 镜头{s}: I2V 出片中...（motion: {clip['motion_prompt'][:40]}...）")
+        webp = anim_shot(frame, face_anchor, args.seed + s, motion_prompt=clip.get("motion_prompt", ""),
+                         negative="blurry, low quality, distorted, watermark, text, wings, shoes, visible feet, deformed, "
+                                  "NSFW, suggestive, revealing, mature, sexy, tight clothing, cleavage, "
+                                  "pedestal, platform, base, stand, display stand, shadow circle, "
+                                  "side view, profile, looking away, three-quarter view")
         # webp → mp4（白底动画，无音频）
         frames_to_alpha(webp, os.path.join(anim_dir, f"scene{s:03d}"), rmbg_net=rmbg)
         # 也存白底 mp4 供预览/对比
