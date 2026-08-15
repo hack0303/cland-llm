@@ -44,6 +44,7 @@ SDXL_URL = "http://127.0.0.1:10331"
 RMBG_WEIGHTS = "/mnt/data/ai_workspace/cland-llm/inference/triposg/pretrained_weights/RMBG-1.4"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_character"
 PROMPT_HUB_DIR = "/home/alice/work/agentic/alice-prompt-hub"
+DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, deformed, bad anatomy, extra limbs, poorly drawn hands, text, jpeg artifacts, ugly, duplicate, oversaturated, extra fingers"
 
 # 中文兼容映射 → prompt-hub 枚举（推荐直接用英文枚举）
 CN_ACTIONS = {"挥手": "WAVING", "奔跑": "RUNNING", "跳跃": "FLYING", "飞行": "FLYING",
@@ -69,12 +70,13 @@ def prompt_hub_sheet(name: str, desc: str, style: str, lighting: str,
     return json.loads(r.stdout)
 
 
-def sdxl(prompt: str, seed: int, out: str):
+def sdxl(prompt: str, seed: int, out: str, negative: str = DEFAULT_NEGATIVE):
     if os.path.exists(out):
         print(f"  [sdxl] 已存在: {out}")
         return
     req = urllib.request.Request(SDXL_URL + "/generate",
-                                 data=json.dumps({"prompt": prompt, "steps": 30, "seed": seed}).encode(),
+                                 data=json.dumps({"prompt": prompt, "steps": 30, "seed": seed,
+                                                  "negative_prompt": negative}).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         img = json.loads(r.read())["image"]
@@ -113,13 +115,27 @@ def to_alpha_png(src: str, dst: str, rmbg_net):
     print(f"  [alpha] {dst}")
 
 
+def _is_true_back(path: str, threshold: float = 0.03) -> bool:
+    """背面方向验证：面部区域肤色占比 <3% 视为真背面（无正脸）"""
+    try:
+        import numpy as _np
+        im = _np.array(Image.open(path).convert("RGB")).astype(float)
+        h, w, _ = im.shape
+        face = im[int(h * 0.2):int(h * 0.5), int(w * 0.3):int(w * 0.7)]
+        skin = (face[:, :, 0] > face[:, :, 1] + 15) & (face[:, :, 1] > face[:, :, 2])
+        return skin.mean() < threshold
+    except Exception:
+        return True  # 无法验证时保留
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True, help="角色名（目录名，如 lumo）")
     ap.add_argument("--desc", required=True, help="角色描述（英文，跨镜头固定复用；含脚部/鞋细节）")
     ap.add_argument("--style", default="cute healing fantasy", help="风格短语（英文）")
     ap.add_argument("--lighting", default="soft volumetric glow, warm rim light", help="光照段（英文）")
-    ap.add_argument("--views", nargs="*", default=["FRONT", "SIDE", "BACK"], help="视角: FRONT SIDE BACK")
+    ap.add_argument("--views", nargs="*", default=["FRONT"],
+                    help="视角: FRONT（默认，生产必需） SIDE BACK（可选档案；BACK 方向不可靠，自动验证失败即跳过）")
     ap.add_argument("--actions", nargs="*", default=[], help="动作: WALKING RUNNING FLYING KNEELING DANCING HOLDING WAVING SITTING（或中文）")
     ap.add_argument("--expressions", nargs="*", default=[], help="表情: HAPPY SAD SURPRISED ANGRY SHY DETERMINED CALM EXCITED（或中文）")
     ap.add_argument("--seed", type=int, default=42)
@@ -137,12 +153,19 @@ def main():
     assets = {"name": args.name, "desc": args.desc, "style": args.style,
               "lighting": args.lighting, "files": {}}
 
-    # Step 1: 三视图（单视图 + 拼版）
+    # Step 1: 三视图（单视图 + 拼版；BACK 方向不可靠 → 肤色检测验证，失败跳过并标注）
     view_files = []
     if not args.no_3view:
         for i, (view, prompt) in enumerate(ph["trisheet"].items()):
             vp = os.path.join(out_dir, "views", f"{view}.png")
             sdxl(prompt, args.seed + 10 + i, vp)
+            if not os.path.exists(vp):
+                continue
+            # BACK 方向验证：面部区肤色占比 >3% = 露脸（SDXL 常把背面画成正面）→ 跳过
+            if view == "back" and not _is_true_back(vp):
+                print(f"  [view] {view} 方向验证失败（露脸），跳过（能力边界，见 CHARACTER.md）")
+                os.remove(vp)
+                continue
             assets["files"][f"view_{view}"] = os.path.relpath(vp, out_dir)
             view_files.append(vp)
         if view_files:

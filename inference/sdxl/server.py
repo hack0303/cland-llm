@@ -15,7 +15,7 @@ app = FastAPI(title="SDXL Image Service (INT8)")
 
 class GenRequest(BaseModel):
     prompt: str = Field(..., description="提示词")
-    negative_prompt: str = "blurry, low quality, distorted, watermark"
+    negative_prompt: str = "blurry, low quality, distorted, watermark, deformed, bad anatomy, extra limbs, poorly drawn hands, text, jpeg artifacts, ugly, duplicate, oversaturated, extra fingers"
     steps: int = 30
     width: int = 1024
     height: int = 1024

@@ -29,6 +29,7 @@ SDXL_URL = "http://127.0.0.1:10331"
 TTS_URL = "http://127.0.0.1:10333"
 SFX_URL = "http://127.0.0.1:10336"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_video"
+DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, deformed, bad anatomy, extra limbs, poorly drawn hands, text, jpeg artifacts, ugly, duplicate, oversaturated, extra fingers"
 
 
 def healthy(url, timeout=4):
@@ -64,7 +65,8 @@ def get_image(story_dir, clip, style, seed):
         print(f"  [frame] 已存在，跳过: {out}")
         return out
     prompt = f"{style}, {clip['image_prompt']}"
-    r = post_json(SDXL_URL + "/generate", {"prompt": prompt, "steps": 30, "seed": seed})
+    r = post_json(SDXL_URL + "/generate", {"prompt": prompt, "steps": 30, "seed": seed,
+                                            "negative_prompt": DEFAULT_NEGATIVE})
     img = r.get("image") or r.get("path")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     os.rename(img, out) if os.path.exists(img) else subprocess.run(["cp", img, out])
