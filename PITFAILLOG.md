@@ -89,3 +89,11 @@
 - **根因**：ComfyUI SaveAnimatedWEBP 产出的动画 webp 带 alpha/特殊块，ffmpeg 内置 webp 解码器（libwebp 解静态）对多帧动画支持不佳
 - **修复**：PIL `Image.open` → 逐帧 `seek(i)+save(png)` → `ffmpeg -framerate N -i f%03d.png` 拼接 mp4（generate.py 已内置）
 - **预防**：动画 webp → mp4 一律走 PIL 提取帧；或 ComfyUI 直接输出 PNG 序列
+
+## [工具链] pip 默认源（pypi.org）挂起无响应，换清华镜像秒装
+
+- **日期**：2026-08-15 · **模块**：环境（base，opencv/scikit-image 安装）
+- **症状**：`pip install opencv-python-headless` 长时间无输出直到超时（300s+）；期间误以为进程卡在业务代码
+- **根因**：本机访问 pypi.org 不稳定（直连挂起）；清华镜像可达
+- **修复**：`pip install xxx -i https://pypi.tuna.tsinghua.edu.cn/simple`
+- **预防**：本机 pip 一律加 `-i` 清华源；pip 挂起时先怀疑网络而非业务代码（用 `pip install -v` 或直接换源验证）

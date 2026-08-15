@@ -123,6 +123,8 @@ def main():
     ap.add_argument("--skip-video", action="store_true", help="跳过出图/I2V（仅合成）")
     ap.add_argument("--no-character-lock", action="store_true", help="关闭角色锚定（每镜头 IPAdapter 用各自首帧）")
     ap.add_argument("--chain-frames", action="store_true", help="首帧接力：镜头 N 首帧用镜头 N-1 末帧（同场景连续）")
+    ap.add_argument("--character", default=None,
+                    help="角色设定 JSON（char_sheet.py 产物）；锚定图=白底 front.png（透明 PNG 留给后期合成）")
     args = ap.parse_args()
 
     sb_path = args.storyboard
@@ -144,6 +146,11 @@ def main():
 
     # ── 1. 逐镜头生产 ──
     char_ref = None  # 角色锚定图（跨镜头锁角色）
+    if args.character and not args.no_character_lock:
+        with open(args.character) as f:
+            ch = json.load(f)
+        char_ref = os.path.join(os.path.dirname(os.path.abspath(args.character)), ch["files"]["front"])
+        print(f"[run] 角色锚定: {char_ref}")
     prev_frame = None  # 首帧接力（--chain-frames）
     for clip in clips:
         s = clip["scene"]
