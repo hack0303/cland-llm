@@ -40,14 +40,29 @@ python3 inference/i2v/run_story.py --sb outputs_video/story001/storyboard.json \
     --character outputs_character/lumo/character.json
 ```
 
-### 姿态表（--poses 可选值）
+### 姿态表（--poses 可选值，v1.1 扩至 14 个动作）
 
 | 中文 | 英文提示词 | | 中文 | 英文提示词 |
 |---|---|---|---|---|
-| 站立 | standing pose, facing forward | | 微笑 | smiling expression, close-up face |
-| 坐姿 | sitting pose | | 惊讶 | surprised expression, close-up face |
-| 奔跑 | running pose, dynamic | | 挥手 | waving one hand, friendly |
-| 战斗 | battle stance | | 思考 | thinking pose, hand on chin |
+| 待机 | idle standing pose, relaxed | | 施法 | casting pose, hands glowing with magic |
+| 站立 | standing pose, facing forward | | 坐下 | sitting pose |
+| 行走 | walking pose | | 躺下 | lying down pose |
+| 奔跑 | running pose, dynamic | | 胜利 | victory pose, arms raised cheering |
+| 跳跃 | jumping pose, mid-air | | 失败 | defeated pose, sitting tired |
+| 攻击 | attacking pose, weapon swing | | 挥手 | waving one hand, friendly |
+| 受击 | hit pose, knocked back | | 思考 | thinking pose, hand on chin |
+
+### 表情表（--expressions 可选值，v1.1 新增，脸部特写）
+
+| 中文 | 英文提示词 | | 中文 | 英文提示词 |
+|---|---|---|---|---|
+| 微笑 | smiling, happy | | 生气 | angry, frowning |
+| 惊讶 | surprised, eyes wide open | | 悲伤 | sad, crying slightly |
+| 害羞 | shy, blushing | | 自信 | confident, determined |
+
+### 三视图（--no-3view 跳过；v1.1 改单视图拼版）
+
+front / side / back 各生成一张单视图 → `views/` → PIL 拼版 `character_sheet_3view.png`
 
 ## 三、输出目录
 
@@ -67,9 +82,10 @@ outputs_character/{name}/
 
 | 产物 | 模板 |
 |---|---|
-| 三视图 | `{desc}, {style}, character sheet, turnaround, three views of the same character, front view side view and back view, full body, plain white background, character design sheet, high quality` |
+| 三视图（单张） | `{desc}, {style}, full body, {front/side/back view}, plain white background, single character, single view, high quality` |
 | 正面 | `{desc}, {style}, full body, front view, standing pose, plain white background, single character, high quality` |
-| 姿态 | `{desc}, {style}, full body, {姿态英文}, plain white background, single character, high quality` |
+| 动作 | `{desc}, {style}, full body, {动作英文}, plain white background, single character, high quality` |
+| 表情（特写） | `{desc}, {style}, close-up portrait, {表情英文} facial expression, face filling the frame, plain white background, high quality` |
 
 - `{desc}` 即角色一致性铁律的"固定复用短语"，所有镜头/姿态共用
 - 统一 `plain white background`：便于 RMBG 抠图（白底是最稳的抠图场景）
@@ -79,11 +95,14 @@ outputs_character/{name}/
 1. **透明 PNG 与 I2V 的关系**：AnimateDiff 是整图扩散（img2img 全画面重绘），透明 PNG 直接输入会变黑底 → **I2V 锚定/首帧一律用白底图**（`front.png`）；透明 PNG 是后期合成/贴片资产，当前管线暂不消费
 2. **三视图不进视频**：三视图是档案，喂给 I2V 会产生"三个角色同时出现/视角混乱"（用户调研结论）
 3. **定妆照人工可换**：`front.png` 不满意的直接替换文件（保留同名），run_story 无需改动
-4. **质量上限**：SDXL 文生图三视图的视图间一致性一般（同 prompt 不同 seed 会漂），若需强一致可后续加 ControlNet 或角色 LoRA
-5. **成本**：默认 6 张图（三视图+正面+4 姿态）≈ 6×71s ≈ 7 分钟 + RMBG 抠图 ~1 分钟
+4. **三视图 = 三张单视图拼版**（v1.1）：文生图"一图三视图"不可靠（排版失控/视图重复/背景非白，实测 90% 非白），改为 front/side/back 各生成一张单视图 + PIL 拼版；单视图间长相一致性仍有限，正式角色建议人工挑选或后续 IPAdapter 锚定
+5. **头盔/面具角色表情受限**：表情表靠脸部特写表达，戴头盔/面具的角色（如宇航员）表情出不来——此类角色要么接受弱表情，要么另做脸部立绘
+6. **表情与定妆照的脸不一致**：表情图独立文生图，无锚定，脸与 front.png 不同；如需强一致后续用 IPAdapter 锚定生成
+7. **成本**：完整版（3 视图+正面+14 动作+6 表情）≈ 24 张 × 71s ≈ **30 分钟** + 抠图
 
 ## 六、变更记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 1.0 | 2026-08-15 | 初版：三阶段工作流 + prompt 模板 + 目录结构 + I2V 接线 |
+| 1.1 | 2026-08-15 | 三视图改单视图拼版（一图三视图不可靠）；动作表扩至 14；新增表情表 6（特写）；记录头盔角色/一致性限制 |
