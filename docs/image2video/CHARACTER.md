@@ -107,3 +107,29 @@ outputs_character/{name}/
 | 1.0 | 2026-08-15 | 初版：三阶段工作流 + prompt 模板 + 目录结构 + I2V 接线 |
 | 1.1 | 2026-08-15 | 三视图改单视图拼版（一图三视图不可靠）；动作表扩至 14；新增表情表 6（特写）；记录头盔角色/一致性限制 |
 | 1.2 | 2026-08-15 | 集成 prompt-hub（提示词唯一真源）；视角按能力裁剪（生产只 FRONT，BACK 自动验证跳过）；desc 长斗篷遮脚 |
+| 1.3 | 2026-08-15 | **Lumo 形象定版**：底座 Counterfeit-V3.0_fp16（SD1.5 系安全动漫）+ 纯真约束提示词；候选 seed 801-805 |
+
+## 七、形象定版记录（Lumo v7.1，2026-08-15）
+
+> 用户确认：Counterfeit-V3 候选"还行"（干净无擦边），定为角色底座与提示词基线
+
+### 模型选择（Anything V5 → Counterfeit-V3）
+
+| 底座 | 问题 | 结论 |
+|---|---|---|
+| SDXL base 1.0 | 写实画动漫 = 恐怖谷/脸崩 | 只做写实备用 |
+| Anything V5 | 训练数据杂，**圆身+斗篷易出擦边** | ❌ 弃用 |
+| **Counterfeit-V3.0_fp16** | 日本画师安全向数据，SD1.5 系 | ✅ **Lumo 定版**（与 AnimateDiff 同底座） |
+
+### 提示词基线（v7.1）
+
+```
+desc: a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, wingless
+
+正面约束: cute healing fantasy, adorable, innocent, wholesome, pure, childlike cuteness, modest
+负面约束: NSFW, suggestive, revealing, mature, sexy, sensual, tight clothing, cleavage, wings, shoes, visible feet, deformed
+```
+
+- **宽松斗篷**（loose baggy）防贴身曲线；**纯真词**（innocent/wholesome/modest）压擦边
+- 候选 seed：801-805（`candidates_cf/`），抽卡 10s/张（ComfyUI 路径，RAM 安全）
+- 输出路径：`outputs_character/lumo/candidates_cf/`
