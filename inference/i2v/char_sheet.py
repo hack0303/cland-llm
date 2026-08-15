@@ -44,7 +44,7 @@ SDXL_URL = "http://127.0.0.1:10331"
 RMBG_WEIGHTS = "/mnt/data/ai_workspace/cland-llm/inference/triposg/pretrained_weights/RMBG-1.4"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_character"
 PROMPT_HUB_DIR = "/home/alice/work/agentic/alice-prompt-hub"
-DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, deformed, bad anatomy, extra limbs, poorly drawn hands, text, jpeg artifacts, ugly, duplicate, oversaturated, extra fingers"
+DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, text"
 
 # 中文兼容映射 → prompt-hub 枚举（推荐直接用英文枚举）
 CN_ACTIONS = {"挥手": "WAVING", "奔跑": "RUNNING", "跳跃": "FLYING", "飞行": "FLYING",
