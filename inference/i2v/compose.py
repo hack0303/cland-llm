@@ -46,6 +46,8 @@ def main():
     ap.add_argument("--fps", type=float, default=8.0, help="统一帧率")
     ap.add_argument("--size", default="512x512", help="统一分辨率")
     ap.add_argument("--transition", type=float, default=None, help="片段间交叉淡化秒数（如 0.5；None=硬切）")
+    ap.add_argument("--durations", nargs="*", type=float, default=[],
+                    help="每镜头目标时长（秒，与 --clips 一一对应）；clip 不足时末帧冻结补帧（声音不截断原则）")
     ap.add_argument("--voice", action="append", default=[], help="配音 wav（可多次）")
     ap.add_argument("--voice-at", action="append", type=float, default=[], help="配音起始秒（对应 --voice 顺序）")
     ap.add_argument("--sfx", action="append", default=[], help="音效 wav（可多次）")
@@ -60,12 +62,21 @@ def main():
     assert len(args.sfx) == len(args.sfx_at), "--sfx 与 --sfx-at 数量必须一致"
 
     with tempfile.TemporaryDirectory() as td:
-        # ── 1. 统一转码每个片段（concat 要求同编码/分辨率/帧率）──
+        # ── 1. 统一转码每个片段（concat 要求同编码/分辨率/帧率；不足目标时长则末帧冻结补帧）──
         norm_clips = []
         for i, clip in enumerate(args.clips):
             nc = os.path.join(td, f"n{i:03d}.mp4")
             run(["ffmpeg", "-y", "-i", clip, "-c:v", "libx264", "-pix_fmt", "yuv420p",
                  "-r", str(args.fps), "-s", args.size, "-an", nc])
+            actual = probe_duration(nc)
+            target = args.durations[i] if i < len(args.durations) else actual
+            if target > actual + 0.05:
+                ext = os.path.join(td, f"x{i:03d}.mp4")
+                run(["ffmpeg", "-y", "-i", nc, "-vf",
+                     f"tpad=stop_mode=clone:stop_duration={target-actual:.3f}",
+                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(args.fps), ext])
+                nc = ext
+                print(f"  [compose] {os.path.basename(clip)}: {actual:.1f}s → tpad 补帧至 {target:.1f}s")
             norm_clips.append(nc)
 
         # ── 2. 拼接（硬切 concat / 淡化 xfade）──

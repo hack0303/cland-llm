@@ -26,6 +26,7 @@ import urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SDXL_URL = "http://127.0.0.1:10331"
+COMFY_URL = "http://127.0.0.1:10337"
 TTS_URL = "http://127.0.0.1:10333"
 SFX_URL = "http://127.0.0.1:10336"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_video"
@@ -65,11 +66,32 @@ def post_form(url, fields, files=None, timeout=600):
         return json.loads(r.read())
 
 
-def post_json(url, data, timeout=600):
-    req = urllib.request.Request(url, data=json.dumps(data).encode(),
+def http_json(url, data=None, timeout=600):
+    req = urllib.request.Request(url, data=json.dumps(data).encode() if data else None,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def post_json(url, data, timeout=600):
+    return http_json(url, data, timeout)
+
+
+def t2i_workflow(prompt: str, seed: int, char_image: str = None) -> dict:
+    """ComfyUI T2I 工作流模板（Counterfeit 动漫底座 + IPAdapter 定妆锚定）
+
+    char_image: 定妆照路径（复制到 ComfyUI input/ 作为 IPAdapter 锚定参考）
+    """
+    with open(os.path.join(BASE, "workflow_t2i_anchor.json")) as f:
+        wf = json.load(f)
+    wf["1"]["inputs"]["ckpt_name"] = "Counterfeit-V3.0_fp16.safetensors"
+    wf["2"]["inputs"]["text"] = prompt
+    wf["3"]["inputs"]["text"] = DEFAULT_NEGATIVE
+    wf["5"]["inputs"]["seed"] = seed
+    if char_image:
+        import shutil
+        shutil.copy(char_image, "/mnt/data/ai_workspace/ComfyUI/input/i2v_char.png")
+    return wf
 
 
 def render_shot_prompt(clip, style, lighting):
@@ -92,19 +114,36 @@ def render_shot_prompt(clip, style, lighting):
     return r.stdout.strip()
 
 
-def get_image(story_dir, clip, style, seed, lighting):
+def get_image(story_dir, clip, style, seed, lighting, char_image=None):
+    """出图引擎：ComfyUI + Counterfeit 动漫底座（与定妆/锚定同源）；SDXL 仅作写实备用"""
     out = os.path.join(story_dir, "frames", f"scene{clip['scene']:03d}.png")
     if os.path.exists(out):
         print(f"  [frame] 已存在，跳过: {out}")
         return out
     prompt = render_shot_prompt(clip, style, lighting)
-    r = post_json(SDXL_URL + "/generate", {"prompt": prompt, "steps": 30, "seed": seed,
-                                            "negative_prompt": DEFAULT_NEGATIVE})
-    img = r.get("image") or r.get("path")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    os.rename(img, out) if os.path.exists(img) else subprocess.run(["cp", img, out])
-    print(f"  [frame] {out}")
-    return out
+    # 走 ComfyUI T2I（Counterfeit 动漫底座）
+    pid = http_json(f"{COMFY_URL}/prompt", {"prompt": t2i_workflow(prompt, seed, char_image)}, timeout=120)["prompt_id"]
+    t0 = time.time()
+    while True:
+        time.sleep(5)
+        try:
+            h = http_json(f"{COMFY_URL}/history/{pid}", timeout=30)
+        except Exception:
+            continue
+        if pid in h:
+            st = h[pid].get("status", {})
+            if st.get("completed"):
+                for o in h[pid]["outputs"].values():
+                    for img in o.get("images", []):
+                        src = f"/mnt/data/ai_workspace/ComfyUI/output/{img['filename']}"
+                        os.makedirs(os.path.dirname(out), exist_ok=True)
+                        os.rename(src, out)
+                        print(f"  [frame] {out} ({time.time()-t0:.0f}s, Counterfeit)")
+                        return out
+            if st.get("status_str") == "error":
+                raise RuntimeError(f"出图失败: {st.get('messages',[st])[-1]}")
+        if time.time() - t0 > 300:
+            raise RuntimeError("出图超时")
 
 
 def get_clip(story_dir, clip, frame_path, seed, ref_image=None):
@@ -203,13 +242,13 @@ def main():
         voice_ref = None  # (基准 wav, 基准文本)：首句后设置，后续零样本克隆
         for clip in clips:
             s = clip["scene"]
-            if clip.get("voice") and "voice" not in clip["output"]:
+            if clip.get("voice") and not os.path.exists(os.path.join(story_dir, "audio", f"scene{clip['scene']:03d}_voice.wav")):
                 wav = get_audio(story_dir, clip, "voice", clip["voice"], voice_ref=voice_ref)
                 clip["output"]["voice"] = os.path.relpath(wav, story_dir)
                 if voice_ref is None:
                     voice_ref = (wav, clip["voice"])
                     print(f"  [voice] 音色锚定: {os.path.basename(wav)}（后续台词克隆此声纹）")
-            if clip.get("sfx") and clip["sfx"] != "无" and "sfx" not in clip["output"] and has_sfx:
+            if clip.get("sfx") and clip["sfx"] != "无" and has_sfx and not os.path.exists(os.path.join(story_dir, "audio", f"scene{clip['scene']:03d}_sfx.wav")):
                 wav = get_audio(story_dir, clip, "sfx", clip["sfx"], args.seed + s)
                 clip["output"]["sfx"] = os.path.relpath(wav, story_dir)
         print("[run] 预配音完成")
@@ -233,7 +272,7 @@ def main():
                 print("  [frame] 跳过：SDXL 未运行")
                 frame = prev_frame if args.chain_frames else None
             else:
-                frame = get_image(story_dir, clip, style, args.seed + s, lighting)
+                frame = get_image(story_dir, clip, style, args.seed + s, lighting, char_ref)
                 clip["output"]["frame"] = os.path.relpath(frame, story_dir)
                 # 镜头 1 出图即定妆照（后续镜头 IPAdapter 锚定它）
                 if char_ref is None:
@@ -250,10 +289,10 @@ def main():
             clip["output"]["clip"] = os.path.relpath(clip_path, story_dir)
             if args.chain_frames:
                 prev_frame = extract_last_frame(clip_path, story_dir)
-        if not args.skip_audio and has_tts and clip.get("voice") and "voice" not in clip["output"]:
+        if not args.skip_audio and has_tts and clip.get("voice") and not os.path.exists(os.path.join(story_dir, "audio", f"scene{clip['scene']:03d}_voice.wav")):
             wav = get_audio(story_dir, clip, "voice", clip["voice"])
             clip["output"]["voice"] = os.path.relpath(wav, story_dir)
-        if not args.skip_audio and has_sfx and clip.get("sfx") and clip["sfx"] != "无" and "sfx" not in clip["output"]:
+        if not args.skip_audio and has_sfx and clip.get("sfx") and clip["sfx"] != "无" and not os.path.exists(os.path.join(story_dir, "audio", f"scene{clip['scene']:03d}_sfx.wav")):
             wav = get_audio(story_dir, clip, "sfx", clip["sfx"], args.seed + s)
             clip["output"]["sfx"] = os.path.relpath(wav, story_dir)
 

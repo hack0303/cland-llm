@@ -1,14 +1,14 @@
 {
   "schema_version": "1.0",
   "title": "最后一颗火种",
-  "style": "cute healing fantasy, soft warm glow in darkness, cinematic lighting",
+  "style": "cute healing fantasy, adorable, innocent, wholesome, pure, childlike cuteness, modest",
   "story": "小灯灵 Lumo 在废墟城市发现一颗微弱火种，一路保护它。途中遇到寒冷的雪怪、废弃机器人和失去家的小女孩。最后发现：这颗火种不是太阳碎片，而是一个孩子心里的希望。",
   "total_duration": 23.5,
   "clips": [
     {
       "scene": 1,
       "duration": 4.0,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, kneeling down discovering a faint glowing ember on a ruined city street at night, dark ruins, soft warm light",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, kneeling down discovering a faint glowing ember on a ruined city street at night, dark ruins, soft warm light",
       "motion_prompt": "gentle glow pulsing, ember flickering softly, slight head tilt toward the light",
       "voice": "世界曾经拥有太阳，直到它熄灭。",
       "voice_at": 0.5,
@@ -27,7 +27,7 @@
     {
       "scene": 2,
       "duration": 3.5,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, walking forward along the ruined street shielding the ember inside her lantern, dark ruins with faint moonlight, warm glow trail",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, walking forward along the ruined street shielding the ember inside her lantern, dark ruins with faint moonlight, warm glow trail",
       "motion_prompt": "walking forward slowly, lantern swinging gently, cloak swaying with each step",
       "voice": "小灯灵一族，世代收集遗落的光。",
       "voice_at": 0.4,
@@ -46,7 +46,7 @@
     {
       "scene": 3,
       "duration": 2.5,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, facing a giant cold snow monster towering in the ruins, snow falling around, the monster looking down curiously, warm tiny light against cold blue darkness",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, facing a giant cold snow monster towering in the ruins, snow falling around, the monster looking down curiously, warm tiny light against cold blue darkness",
       "motion_prompt": "snow drifting around, trembling slightly, looking up at the tall snow monster",
       "voice": "雪怪先生……别害怕。",
       "voice_at": 0.4,
@@ -65,7 +65,7 @@
     {
       "scene": 4,
       "duration": 2.0,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding up her big lantern, warm golden light melting snow around the snow monster's feet, the monster's face softening into a warm smile, glowing warmth spreading",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding up her big lantern, warm golden light melting snow around the snow monster's feet, the monster's face softening into a warm smile, glowing warmth spreading",
       "motion_prompt": "warm light rays spreading outward, snow melting and dripping, monster smiling softly",
       "voice": "好……好暖和。",
       "voice_at": 0.6,
@@ -84,7 +84,7 @@
     {
       "scene": 5,
       "duration": 2.0,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, standing in front of an abandoned rusty robot half-buried in rubble, the robot's eyes flickering awake with warm orange light, dark ruins",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, standing in front of an abandoned rusty robot half-buried in rubble, the robot's eyes flickering awake with warm orange light, dark ruins",
       "motion_prompt": "robot eyes flickering awake, light pulsing brighter, small sparks rising",
       "voice": "滴——检测到……光。",
       "voice_at": 0.5,
@@ -103,7 +103,7 @@
     {
       "scene": 6,
       "duration": 2.0,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, approaching a sad little girl sitting among ruins hugging her knees, the girl looking up with tearful eyes, faint warm light illuminating her face",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, holding a large lantern bigger than herself, approaching a sad little girl sitting among ruins hugging her knees, the girl looking up with tearful eyes, faint warm light illuminating her face",
       "motion_prompt": "girl's hair moving softly, fairy floating closer gently, tears glistening",
       "voice": "你……你是谁？",
       "voice_at": 0.6,
@@ -122,7 +122,7 @@
     {
       "scene": 7,
       "duration": 4.0,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, handing her big lantern to the little girl, the ember inside glowing brighter than ever, warm golden light blooming gently between them, hope in the girl's eyes",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, handing her big lantern to the little girl, the ember inside glowing brighter than ever, warm golden light blooming gently between them, hope in the girl's eyes",
       "motion_prompt": "lantern glowing brighter and brighter, sparkles rising, light blooming outward",
       "voice": "这不是太阳的碎片，是你心里的希望。",
       "voice_at": 0.5,
@@ -141,7 +141,7 @@
     {
       "scene": 8,
       "duration": 3.5,
-      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a warm yellow cloak fully covering her feet, a small glowing wick on her chest, standing together with the little girl holding the lantern, warm light spreading across the ruined city, soft dawn breaking in the distance, hopeful atmosphere",
+      "image_prompt": "a tiny round glowing light fairy with a round chubby body, a cute face with big bright sparkling eyes, a loose baggy yellow cloak fully covering her feet, a small glowing wick on her chest, standing together with the little girl holding the lantern, warm light spreading across the ruined city, soft dawn breaking in the distance, hopeful atmosphere",
       "motion_prompt": "light spreading across the city like dawn, gentle breeze, warmth filling the scene",
       "voice": "当希望被点亮，黑暗就不再是终点。",
       "voice_at": 0.5,
