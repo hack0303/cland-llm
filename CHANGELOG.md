@@ -32,3 +32,11 @@ description: record your changes
 - 推理/TripoSG：修复 FastAPI `async def` 内同步阻塞导致事件循环卡死的问题（改为 `def` 走线程池）
 - 推理/TripoSG：修复 `prepare_image` 接收 `BytesIO` 报 `stat: path should be string` 异常（改为先落盘临时文件）
 - 推理/diso：修复 conda gcc 找不到系统 C++ 头文件与 crt 库的问题（setup.py 补齐 include/link 参数）
+
+## 20260815（续）
+
+### Changes
+
+- 推理/图生视频：完成《最后一颗火种》Lumo 全流水线（prompt-hub 提示词 → char_sheet 角色 v4 → 手动分镜 8 镜头 → run_story → 合成 17.6s 含配音），case002
+- 修复：SDXL 并发 500（调度器加锁）、I2V 1024 慢 6.6 倍（generate.py --size 512）、run_story 健康检查兼容 /system_stats、负面词去掉 ugly/deformed（反向降质）
+- 决策：SFX 跳过（15GB RAM）、三视图只 FRONT（SDXL 方向能力边界）、desc 长斗篷遮脚（脚细节规避）

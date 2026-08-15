@@ -33,11 +33,14 @@ DEFAULT_NEGATIVE = "blurry, low quality, distorted, watermark, deformed, bad ana
 
 
 def healthy(url, timeout=4):
-    try:
-        with urllib.request.urlopen(f"{url}/health", timeout=timeout) as r:
-            return r.status == 200
-    except Exception:
-        return False
+    for path in ("health", "system_stats"):  # ComfyUI 用 /system_stats，无 /health
+        try:
+            with urllib.request.urlopen(f"{url}/{path}", timeout=timeout) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def post_form(url, fields, timeout=600):
@@ -84,7 +87,7 @@ def get_clip(story_dir, clip, frame_path, seed, ref_image=None):
     cmd = [sys.executable, os.path.join(BASE, "generate.py"),
            "--image", frame_path, "--prefix", f"scene{clip['scene']:03d}",
            "--frames", str(frames), "--seed", str(seed),
-           "--outdir", os.path.join(story_dir, "clips")]
+           "--outdir", os.path.join(story_dir, "clips"), "--size", "512x512"]
     if ref_image:
         cmd += ["--ref-image", ref_image]
     subprocess.run(cmd, check=True)

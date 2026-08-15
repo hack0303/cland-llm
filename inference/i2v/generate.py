@@ -43,17 +43,26 @@ def main():
     ap.add_argument("--outdir", default=OUTPUT_DIR, help="输出目录（默认 outputs_video）")
     ap.add_argument("--ref-image", default=None,
                     help="角色锚定图（IPAdapter 用，跨镜头锁角色）；默认=首帧图（保持旧行为）")
+    ap.add_argument("--size", default="512x512",
+                    help="生成分辨率（SD1.5 甜点 512x512；orig=不缩放）")
     ap.add_argument("--keep-webp", action="store_true", help="保留 webp 中间产物")
     args = ap.parse_args()
 
-    # 1. 参考图放入 ComfyUI input/
-    img_name = os.path.basename(args.image)
-    shutil.copy(args.image, os.path.join(INPUT_DIR, img_name))
-    if img_name != "i2v_ref.png":
-        shutil.copy(args.image, os.path.join(INPUT_DIR, "i2v_ref.png"))
+    # 1. 参考图放入 ComfyUI input/（支持缩放到 SD1.5 甜点分辨率）
+    from PIL import Image as PILImage
+    src_img = PILImage.open(args.image).convert("RGB")
+    if args.size and args.size != "orig":
+        w, h = (int(x) for x in args.size.lower().split("x"))
+        src_img = src_img.resize((w, h), PILImage.LANCZOS)
+    tmp_ref = os.path.join(INPUT_DIR, "i2v_ref.png")
+    src_img.save(tmp_ref)
     # 角色锚定图（IPAdapter 通道）
     ref = args.ref_image or args.image
-    shutil.copy(ref, os.path.join(INPUT_DIR, "i2v_char.png"))
+    ref_img = PILImage.open(ref).convert("RGB")
+    if args.size and args.size != "orig":
+        w, h = (int(x) for x in args.size.lower().split("x"))
+        ref_img = ref_img.resize((w, h), PILImage.LANCZOS)
+    ref_img.save(os.path.join(INPUT_DIR, "i2v_char.png"))
 
     # 2. 载入并改写 workflow
     with open(WORKFLOW) as f:

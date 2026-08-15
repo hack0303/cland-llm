@@ -14,7 +14,11 @@
       "voice_at": 0.5,
       "sfx": "风声、废墟沙砾声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene001.png",
+        "clip": "clips/scene001.mp4",
+        "voice": "audio/scene001_voice.wav"
+      }
     },
     {
       "scene": 2,
@@ -25,7 +29,11 @@
       "voice_at": 0.3,
       "sfx": "脚步声、风声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene002.png",
+        "clip": "clips/scene002.mp4",
+        "voice": "audio/scene002_voice.wav"
+      }
     },
     {
       "scene": 3,
@@ -36,7 +44,11 @@
       "voice_at": 0.5,
       "sfx": "雪花飘落声、低沉呼吸声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene003.png",
+        "clip": "clips/scene003.mp4",
+        "voice": "audio/scene003_voice.wav"
+      }
     },
     {
       "scene": 4,
@@ -47,7 +59,11 @@
       "voice_at": 0.8,
       "sfx": "雪融水滴声、温暖嗡鸣",
       "sfx_at": 0.5,
-      "output": {}
+      "output": {
+        "frame": "frames/scene004.png",
+        "clip": "clips/scene004.mp4",
+        "voice": "audio/scene004_voice.wav"
+      }
     },
     {
       "scene": 5,
@@ -58,7 +74,11 @@
       "voice_at": 0.5,
       "sfx": "机械启动声、电流声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene005.png",
+        "clip": "clips/scene005.mp4",
+        "voice": "audio/scene005_voice.wav"
+      }
     },
     {
       "scene": 6,
@@ -69,7 +89,11 @@
       "voice_at": 0.6,
       "sfx": "小女孩抽泣声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene006.png",
+        "clip": "clips/scene006.mp4",
+        "voice": "audio/scene006_voice.wav"
+      }
     },
     {
       "scene": 7,
@@ -80,7 +104,11 @@
       "voice_at": 0.5,
       "sfx": "心跳声、光绽放声",
       "sfx_at": 0.5,
-      "output": {}
+      "output": {
+        "frame": "frames/scene007.png",
+        "clip": "clips/scene007.mp4",
+        "voice": "audio/scene007_voice.wav"
+      }
     },
     {
       "scene": 8,
@@ -91,7 +119,11 @@
       "voice_at": 0.5,
       "sfx": "微风、远处钟声",
       "sfx_at": 0.0,
-      "output": {}
+      "output": {
+        "frame": "frames/scene008.png",
+        "clip": "clips/scene008.mp4",
+        "voice": "audio/scene008_voice.wav"
+      }
     }
   ]
 }
