@@ -48,12 +48,17 @@ def healthy(url, timeout=4):
     return False
 
 
-def post_form(url, fields, timeout=600):
+def post_form(url, fields, files=None, timeout=600):
+    """multipart 表单：fields=文本字段；files={name: (filename, bytes)} 文件字段"""
     import uuid
     boundary = uuid.uuid4().hex
     body = b""
     for k, v in fields.items():
         body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
+    for name, (fname, fbytes) in (files or {}).items():
+        body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; "
+                 f"filename=\"{fname}\"\r\nContent-Type: application/octet-stream\r\n\r\n").encode()
+        body += fbytes + b"\r\n"
     body += f"--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -120,25 +125,26 @@ def get_clip(story_dir, clip, frame_path, seed, ref_image=None):
     return out
 
 
-def get_audio(story_dir, clip, kind, text, seed=None):
-    """kind: voice|sfx；返回 (wav 路径, None) 或 None"""
+def get_audio(story_dir, clip, kind, text, seed=None, voice_ref=None):
+    """kind: voice|sfx；voice_ref=(wav_path, prompt_text) 时零样本克隆音色（音频一致性锚定）"""
     out = os.path.join(story_dir, "audio", f"scene{clip['scene']:03d}_{kind}.wav")
     if os.path.exists(out):
         print(f"  [{kind}] 已存在，跳过: {out}")
         return out
     if kind == "voice":
-        r = post_form(TTS_URL + "/generate", {"text": text, "gender": "female"})
+        fields = {"text": text, "gender": "female"}
+        files = None
+        if voice_ref:
+            ref_wav, ref_text = voice_ref
+            with open(ref_wav, "rb") as f:
+                files = {"prompt_speech": (os.path.basename(ref_wav), f.read())}
+            fields["prompt_text"] = ref_text
+        r = post_form(TTS_URL + "/generate", fields, files=files)
     else:
         r = post_form(SFX_URL + "/generate", {"prompt": text, "seed": seed or 42})
     wav = r.get("wav") or r.get("path")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     os.rename(wav, out)
-    # 时长校验：语音超出镜头剩余空间会混叠 → 警告（voice_at + 语音时长 ≤ 镜头时长）
-    if kind == "voice":
-        d = probe_duration(out)
-        remain = clip["duration"] - clip["voice_at"]
-        if d > remain + 0.2:
-            print(f"  [voice] ⚠️ 语音 {d:.1f}s 超出镜头剩余 {remain:.1f}s，合成会截断/混叠；建议精简台词或加长镜头")
     print(f"  [{kind}] {out}")
     return out
 
@@ -193,12 +199,16 @@ def main():
 
     # ── 0. 预配音阶段（配音纯文本→音频，不依赖画面，前置批量完成）──
     if not args.skip_audio and has_tts:
-        print("[run] Phase 0: 预配音（全部台词批量 TTS）...")
+        print("[run] Phase 0: 预配音（首句定音色 → 其余克隆同声纹）...")
+        voice_ref = None  # (基准 wav, 基准文本)：首句后设置，后续零样本克隆
         for clip in clips:
             s = clip["scene"]
             if clip.get("voice") and "voice" not in clip["output"]:
-                wav = get_audio(story_dir, clip, "voice", clip["voice"])
+                wav = get_audio(story_dir, clip, "voice", clip["voice"], voice_ref=voice_ref)
                 clip["output"]["voice"] = os.path.relpath(wav, story_dir)
+                if voice_ref is None:
+                    voice_ref = (wav, clip["voice"])
+                    print(f"  [voice] 音色锚定: {os.path.basename(wav)}（后续台词克隆此声纹）")
             if clip.get("sfx") and clip["sfx"] != "无" and "sfx" not in clip["output"] and has_sfx:
                 wav = get_audio(story_dir, clip, "sfx", clip["sfx"], args.seed + s)
                 clip["output"]["sfx"] = os.path.relpath(wav, story_dir)

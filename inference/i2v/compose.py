@@ -103,7 +103,7 @@ def main():
         # 输入 0 = vconcat（纯视频），音频从输入 1 开始 → [aidx+1:a]
         for wav, at in zip(args.voice + args.sfx, args.voice_at + args.sfx_at):
             ms = int(at * 1000)
-            labels.append(f"[{aidx+1}:a]adelay={ms}|{ms}[a{aidx}]")
+            labels.append(f"[{aidx+1}:a]loudnorm=I=-16:TP=-1.5:LRA=11,adelay={ms}|{ms}[a{aidx}]")
             audio_srcs.append(wav)
             aidx += 1
         if args.bgm:
