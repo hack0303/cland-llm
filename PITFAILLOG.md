@@ -65,3 +65,27 @@
 - **根因**：pypi/pytorch/conda-forge 官方源在该网络环境不可达或极慢，pip/conda 重试机制不报错、无限等待
 - **修复**：pip 用 `-i https://pypi.tuna.tsinghua.edu.cn/simple`；torch/torchvision wheel 从阿里云镜像 `https://mirrors.aliyun.com/pytorch-wheels/cu118/` 直接 curl 下载（注意 HTML 里 `+` 转义为 `&#43;`）；conda 用 `--offline` + 直接指定 pkgs 缓存里的 `.conda` 文件路径
 - **预防**：大包下载前先 curl 测速（`-w "%{speed_download}"`）；pip 超时无进展（`ss -tnp` 无网络连接）立即杀掉换镜像
+
+## [工具链] bash 工具 timeout 会杀死整个进程组，nohup 不防 SIGTERM
+
+- **日期**：2026-08-15 · **模块**：图生视频部署（ComfyUI 服务）
+- **症状**：ComfyUI 采样跑到 80%（16/20 步）时进程消失，日志无任何报错；同机 `pgrep` 找不到进程，显存已释放
+- **根因**：后台 `nohup python main.py &` 与前台 `python generate.py` 同属一个 bash -c 进程组；bash 工具 900s 超时杀进程组 → ComfyUI 收到 SIGTERM。`nohup` 只忽略 SIGHUP，**不防 SIGTERM**
+- **修复**：用 `setsid env ... nohup python main.py ... < /dev/null &` 启动常驻服务，脱离进程组
+- **预防**：常驻服务一律 setsid 启动；长任务前台执行时 bash 工具 timeout 给足余量
+
+## [兼容] AnimateDiff + IPAdapter 在 P40 上报 query/key dtype 不一致（fp32 × fp16）
+
+- **日期**：2026-08-15 · **模块**：图生视频（ComfyUI + AnimateDiff-Evolved + IPAdapter_plus）
+- **症状**：KSampler 报 `Expected query, key, and value to have the same dtype, but got query.dtype: float key.dtype: c10::Half`
+- **根因**：AnimateDiff-Evolved 的 `_diffusion_model_groupnormed_wrapper` 把 groupnorm 输出转 fp32（数值稳定），下游 cross-attention 的 query 变 fp32；IPAdapter_plus 注入的 ip_k/ip_v 是 fp16 → SDPA 拒绝混合精度。P40 无 Tensor Core 走 PyTorch 标准路径，严格校验 dtype；消费卡（flash-attn 路径）同样会炸
+- **修复**：`ComfyUI_IPAdapter_plus/CrossAttentionPatch.py` 在 `optimized_attention` 前对齐 dtype：`if q.dtype != ip_k.dtype: ip_k = ip_k.to(q.dtype); ip_v = ip_v.to(q.dtype)`
+- **预防**：第三方 patch 类节点（cross-attention 注入）在 P40 上都要检查 dtype 对齐；改代码后必须重启 ComfyUI 才生效（模块常驻内存）
+
+## [工具] ffmpeg 直接解码动画 webp 失败（exit 69），PIL 可正常逐帧提取
+
+- **日期**：2026-08-15 · **模块**：图生视频输出管线
+- **症状**：`ffmpeg -i out.webp -c:v libx264 out.mp4` 报 `Invalid data found when processing input` / `error code: -22`
+- **根因**：ComfyUI SaveAnimatedWEBP 产出的动画 webp 带 alpha/特殊块，ffmpeg 内置 webp 解码器（libwebp 解静态）对多帧动画支持不佳
+- **修复**：PIL `Image.open` → 逐帧 `seek(i)+save(png)` → `ffmpeg -framerate N -i f%03d.png` 拼接 mp4（generate.py 已内置）
+- **预防**：动画 webp → mp4 一律走 PIL 提取帧；或 ComfyUI 直接输出 PNG 序列

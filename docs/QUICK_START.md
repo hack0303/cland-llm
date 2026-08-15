@@ -23,6 +23,7 @@ bash scripts/start_services.sh --with-asr # 额外启动语音识别（10334）
 | 10333 | 语音合成 | Spark-TTS 0.5B | audio_env | 1 | `POST /generate` 文本→WAV |
 | 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本（**默认停**） |
 | 10336 | 音效生成 | AudioGen 1.5B | audio_env | 1 | `POST /generate` 提示词→WAV |
+| 10337 | 图生视频 | AnimateDiff（SD1.5+mm_sd_v15） | base | 1 | ComfyUI API + `inference/i2v/generate.py` 图片→MP4 |
 
 ### 3. 调用速查
 
@@ -70,6 +71,7 @@ SenseVoice (10334) → 语音指令/字幕
 | `docs/3d/model_selection.md` | 3D 模型选型 + 部署记录 |
 | `docs/speech/model_selection.md` | 语音模型选型（TTS/ASR） |
 | `docs/audio/model_selection.md` | 音乐/音效选型 |
+| `docs/image2video/RESEARCH.md` | 图生视频选型研究（AnimateDiff/LTX-Video，规划中） |
 | `inference/triposg/README.md` | TripoSG 部署踩坑全记录 |
 | `PITFAILLOG.md` | 全部踩坑记录（diso 编译/cuDNN/内存等） |
 | `CHANGELOG.md` | 变更日志 |
