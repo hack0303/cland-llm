@@ -40,6 +40,7 @@ def main():
     ap.add_argument("--cfg", type=float, default=7.0)
     ap.add_argument("--prefix", default="i2v_out")
     ap.add_argument("--comfy", default="http://127.0.0.1:10337")
+    ap.add_argument("--outdir", default=OUTPUT_DIR, help="输出目录（默认 outputs_video）")
     ap.add_argument("--keep-webp", action="store_true", help="保留 webp 中间产物")
     args = ap.parse_args()
 
@@ -86,11 +87,11 @@ def main():
 
 
 def finalize(fname, subfolder, args):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    src = os.path.join(OUTPUT_DIR, subfolder, fname) if subfolder else os.path.join(OUTPUT_DIR, fname)
+    os.makedirs(args.outdir, exist_ok=True)
+    src = os.path.join(args.outdir, subfolder, fname) if subfolder else os.path.join(args.outdir, fname)
     if not os.path.exists(src):  # 兼容 output 目录配置
         src = os.path.join("/mnt/data/ai_workspace/ComfyUI/output", subfolder, fname)
-    mp4 = os.path.join(OUTPUT_DIR, f"{args.prefix}.mp4")
+    mp4 = os.path.join(args.outdir, f"{args.prefix}.mp4")
     # 动画 webp → PIL 提取帧 → ffmpeg 拼 mp4（ffmpeg 直接解动画 webp 会失败，实测 exit 69）
     import tempfile
     from PIL import Image

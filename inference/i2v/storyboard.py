@@ -72,6 +72,11 @@ def call_llm(story: str, max_tokens: int = 4096, retries: int = 2) -> dict:
                 content = content.split("\n", 1)[1].rsplit("```", 1)[0]
             sb = json.loads(content)
             validate(sb)
+            # 规范 v1.0：自动补齐 schema 元信息
+            sb["schema_version"] = "1.0"
+            sb["total_duration"] = round(sum(c["duration"] for c in sb["clips"]), 2)
+            for i, c in enumerate(sb["clips"]):
+                c["output"] = {}
             return sb
         except Exception as e:
             print(f"[storyboard] 第 {attempt+1} 次尝试失败: {type(e).__name__}: {e}", file=sys.stderr)
@@ -82,12 +87,13 @@ def call_llm(story: str, max_tokens: int = 4096, retries: int = 2) -> dict:
 
 def validate(sb: dict):
     assert isinstance(sb.get("clips"), list) and len(sb["clips"]) > 0, "clips 为空"
-    for c in sb["clips"]:
+    assert isinstance(sb.get("title"), str) and sb["title"], "缺少 title"
+    assert isinstance(sb.get("style"), str) and sb["style"], "缺少 style"
+    for i, c in enumerate(sb["clips"]):
         for k in SCHEMA_KEYS:
-            assert k in c, f"clips 缺少字段 {k}"
+            assert k in c, f"clips[{i}] 缺少字段 {k}"
+        assert c["scene"] == i + 1, f"clips[{i}].scene 须为 {i+1}"
         assert isinstance(c["duration"], (int, float)) and 1 <= c["duration"] <= 6, "duration 须 1~6s"
-    # 时间轴对齐：voice_at/sfx_at 不得超出本镜时长
-    for c in sb["clips"]:
         assert c["voice_at"] < c["duration"] and c["sfx_at"] < c["duration"], "音频偏移超出镜头时长"
 
 
@@ -107,8 +113,9 @@ def main():
     print(f"[storyboard] 调用 LLM 生成分镜...（{LLM_URL}）")
     t0 = time.time()
     sb = call_llm(story)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out = os.path.join(OUTPUT_DIR, f"{args.prefix}.json")
+    out_dir = os.path.join(OUTPUT_DIR, args.prefix)
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "storyboard.json")
     with open(out, "w") as f:
         json.dump(sb, f, ensure_ascii=False, indent=2)
 
