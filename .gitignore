@@ -208,3 +208,14 @@ __marimo__/
 
 # 模型权重（本地保留，不入库）
 inference/triposg/pretrained_weights/
+
+# 生成物（不入库）
+outputs_video/
+outputs_character/
+outputs_audio/
+outputs3d/
+inference/i2v/lora/dataset/
+inference/i2v/lora/output/
+*.mp4
+*.webp
+!inference/triposg/assets/**/*.png
