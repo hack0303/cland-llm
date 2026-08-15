@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--prefix", default="i2v_out")
     ap.add_argument("--comfy", default="http://127.0.0.1:10337")
     ap.add_argument("--outdir", default=OUTPUT_DIR, help="输出目录（默认 outputs_video）")
+    ap.add_argument("--ref-image", default=None,
+                    help="角色锚定图（IPAdapter 用，跨镜头锁角色）；默认=首帧图（保持旧行为）")
     ap.add_argument("--keep-webp", action="store_true", help="保留 webp 中间产物")
     args = ap.parse_args()
 
@@ -49,11 +51,15 @@ def main():
     shutil.copy(args.image, os.path.join(INPUT_DIR, img_name))
     if img_name != "i2v_ref.png":
         shutil.copy(args.image, os.path.join(INPUT_DIR, "i2v_ref.png"))
+    # 角色锚定图（IPAdapter 通道）
+    ref = args.ref_image or args.image
+    shutil.copy(ref, os.path.join(INPUT_DIR, "i2v_char.png"))
 
     # 2. 载入并改写 workflow
     with open(WORKFLOW) as f:
         wf = json.load(f)
     wf["2"]["inputs"]["image"] = "i2v_ref.png"
+    wf["14"]["inputs"]["image"] = "i2v_char.png"
     wf["4"]["inputs"]["amount"] = args.frames
     wf["11"]["inputs"].update(steps=args.steps, seed=args.seed, cfg=args.cfg, denoise=args.denoise)
     wf["13"]["inputs"].update(filename_prefix=args.prefix, fps=args.fps)
