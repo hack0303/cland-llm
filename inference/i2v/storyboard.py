@@ -28,8 +28,8 @@ JSON 结构：
   "clips": [
     {
       "scene": 1,
-      "image_prompt": "画面提示词（英文，描述构图/主体/环境/光照，用于 SDXL 文生图）",
-      "motion_prompt": "运动提示词（英文，描述轻微动画，如 subtle motion, gentle breeze）",
+      "image_prompt": "画面提示词（英文）",
+      "motion_prompt": "运动提示词（英文）",
       "voice": "旁白/台词（中文，该镜头说的话）",
       "voice_at": 0.0,
       "sfx": "音效描述（中文，如 风声、脚步声）",
@@ -39,11 +39,17 @@ JSON 结构：
   ]
 }
 
-规则：
+提示词书写要求（必须遵守）：
+- image_prompt 英文四段式：{主体} {姿态}, {环境}, {光照}, {风格+质量词}，15~30 词一句；
+  **角色描述短语跨镜头固定复用**（同一角色各镜头用一模一样的开头，只换动作/环境）；禁止否定词
+- motion_prompt 只写轻微运动（AnimateDiff 能力边界）：subtle motion, gentle breeze, soft breathing,
+  slight waving, blinking, leaves drifting 等；**禁止 run/jump/somersault/fighting/explosion/fast pan 等大幅度运动词**；统一 subtle/gentle/soft 开头
+- voice 一句一镜 ≤30 字口语化；sfx ≤10 字短描述，无音效写"无"
+- 相邻镜头场景词连贯（同一地点用相同英文表达）
+
+其他规则：
 - clips 数量 = 故事自然分镜数（通常 3~8 个），每个镜头 duration 默认 2 秒
-- image_prompt 用英文、具体、可被 SDXL 直接使用；连续镜头保持角色/场景一致
-- voice 是镜头开始时朗读的台词，voice_at 用镜头内偏移秒数
-- 每个镜头都要有 sfx（没有就写"无"），sfx_at 用镜头内偏移秒数
+- voice 是镜头开始时朗读的台词，voice_at 用镜头内偏移秒数（须小于 duration）
 - 只输出 JSON 本身，不要 markdown 代码块、不要解释"""
 
 SCHEMA_KEYS = ["scene", "image_prompt", "motion_prompt", "voice", "voice_at", "sfx", "sfx_at", "duration"]

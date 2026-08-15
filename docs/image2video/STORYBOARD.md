@@ -59,7 +59,47 @@
 - 镜头 k 的**全局起始时间** = Σ(clips[0..k-1].duration)
 - 配音/音效的全局时间 = 镜头全局起始 + 镜头内 `*_at` 偏移（compose.py 的 `--voice-at/--sfx-at` 用全局时间）
 
-## 二、目录结构（outputs_video/）
+## 二、提示词书写要求（v1.1）
+
+### 2.1 image_prompt（SDXL 画面）— 英文，四段式
+
+```
+{主体描述} {姿态/动作}, {环境/场景}, {光照}, {风格+质量词}
+```
+
+| 要求 | 规则 |
+|---|---|
+| 结构 | 主体 → 姿态 → 环境 → 光照 → 风格，15~30 词一句完成 |
+| **一致性铁律** | 角色描述短语**跨镜头固定复用**（如 `a cute cat astronaut in white spacesuit`），只换动作/环境，不得换说法 |
+| 构图 | 1024×1024 方形，主体居中/黄金位 |
+| 禁止 | 否定词（负面词走 I2V 负面提示词）、超长堆砌 |
+
+例：`a cute cat astronaut waving one paw, standing on moon surface with earth in background, cinematic lighting, cute cartoon style, high quality`
+
+### 2.2 motion_prompt（I2V 运动）— 英文，能力边界内
+
+```
+subtle motion + {具体轻微动作}
+```
+
+| 规则 | 说明 |
+|---|---|
+| 只写轻微运动 | AnimateDiff 第一代上限：呼吸/飘动/摇摆/眨眼/点头/手势 |
+| 允许词 | `subtle motion, gentle breeze swaying the tail, soft breathing, slight paw waving, blinking, leaves drifting` |
+| **禁止词** | `run, jump, somersault, fighting, explosion, fast pan`（大幅度运动 = 画面崩坏/静止） |
+| 统一前缀 | 以 `subtle/gentle/soft` 开头，强制低幅度 |
+
+### 2.3 voice / sfx（中文）
+
+- voice：一句一镜，≤30 字，口语化台词/旁白
+- sfx：≤10 字短描述（`风声、脚步声`），无音效写 `无`
+
+### 2.4 镜头连续性
+
+- 相邻镜头场景词连贯（如 `moon surface` → `inside lunar base`）
+- `style` 字段由 run_story 自动拼进每个 image_prompt（`{style}, {image_prompt}`）
+
+## 三、目录结构（outputs_video/）
 
 ```
 /mnt/data/ai_workspace/outputs_video/
@@ -103,3 +143,4 @@ python3 inference/i2v/compose.py --clips ... --voice ... --prefix story001_final
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 1.0 | 2026-08-15 | 初版：schema + 目录结构 + 工具接口定义 |
+| 1.1 | 2026-08-15 | 新增：提示词书写要求（image_prompt 四段式 / motion_prompt 能力边界 / 一致性铁律） |
