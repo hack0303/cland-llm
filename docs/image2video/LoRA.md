@@ -124,6 +124,20 @@ accelerate launch train_lora.py \
 # 4. 通过 → 产出 lumo_v1.safetensors → 接入 char_sheet prompt（desc → 1lumo）
 ```
 
+## 五之二、LoRA 叠加规则（维度不互斥）
+
+| 组合 | 兼容 | 说明 |
+|---|---|---|
+| 角色 LoRA + 风格 LoRA | ✅ | 不同维度（脸 vs 画风） |
+| 角色 LoRA + Motion LoRA | ✅ | 空间特征 vs 时序运动 |
+| 角色 LoRA + IPAdapter 锚定 | ✅ | 出图锁长相 + 视频注入锁帧 |
+| 两个角色 LoRA | ❌ | 同维度叠加 = 混合脸 |
+| 两个 Motion LoRA | ❌ | 同维度冲突 |
+
+- LoRA 是加性微调（权重增量相加）——**维度不互斥即可叠加**；同维度互斥
+- 权重配比建议：角色 0.8 / 风格 0.5 / Motion 0.6，逐项调
+- 多个 LoRA 权重过高 = 特征过载（画面脏/角色崩）
+
 ## 六、风险与规避
 
 | 风险 | 规避 |
