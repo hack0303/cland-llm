@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""角色设定工作流 — 三视图母版 + 动作资产（透明 PNG）+ 视频锚定接线。
+"""角色设定工作流 — prompt-hub 渲染提示词（唯一真源）+ 出图 + RMBG 抠图 + 资产打包。
 
 三阶段（对齐动画公司标准流程）:
-    Step 1 角色母版: 三视图（档案/IP身份证，白底保留原图）
-    Step 2 动作资产: 正面全身 + 各姿态（SDXL 生成 → RMBG-1.4 抠图 → 透明 PNG）
-    Step 3 视频接线: front_alpha.png 即 run_story 的 IPAdapter 锚定图（--character）
+    Step 1 角色母版: 三视图（front/side/back 单视图 + 拼版，档案）
+    Step 2 动作资产: 正面定妆 + 动作/表情（prompt-hub 渲染 → SDXL → RMBG 透明 PNG）
+    Step 3 视频接线: front.png 即 run_story 的 IPAdapter 锚定图（--character）
+
+提示词来源: prompt-hub CLI（/home/alice/work/agentic/alice-prompt-hub）
+    模板: {desc}, {style}, {lighting}, 中间段, highly detailed, sharp focus,
+          intricate, plain background, white, single character
 
 用法:
     python3 char_sheet.py --name lumo \
-        --desc "a cute firefly fairy with a glowing chest core and purple cloak" \
-        --style "cute cartoon, soft lighting" \
-        --poses standing sitting running smiling
+        --desc "a tiny round glowing firefly fairy with a warm yellow cloak..." \
+        --style "cute healing fantasy" \
+        --lighting "soft volumetric glow, warm rim light" \
+        --actions WALKING,HOLDING,WAVING \
+        --expressions HAPPY,SAD,SURPRISED
 
 输出: /mnt/data/ai_workspace/outputs_character/{name}/
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.request
@@ -28,7 +35,6 @@ sys.path.insert(0, os.path.abspath(TRIOSG_SCRIPTS))
 import numpy as np
 import cv2
 import torch
-import torchvision.transforms.functional as TF
 from PIL import Image
 from skimage.morphology import remove_small_objects
 from skimage.measure import label
@@ -37,41 +43,30 @@ from briarmbg import BriaRMBG
 SDXL_URL = "http://127.0.0.1:10331"
 RMBG_WEIGHTS = "/mnt/data/ai_workspace/cland-llm/inference/triposg/pretrained_weights/RMBG-1.4"
 OUT_ROOT = "/mnt/data/ai_workspace/outputs_character"
+PROMPT_HUB_DIR = "/home/alice/work/agentic/alice-prompt-hub"
 
-# 动作表：中文名 → 英文提示词片段（动画动作）
-POSES = {
-    "待机": "idle standing pose, facing forward, relaxed",
-    "站立": "standing pose, facing forward",
-    "行走": "walking pose",
-    "奔跑": "running pose, dynamic",
-    "跳跃": "jumping pose, mid-air",
-    "攻击": "attacking pose, weapon swing",
-    "受击": "hit pose, knocked back",
-    "施法": "casting pose, hands glowing with magic",
-    "坐下": "sitting pose",
-    "躺下": "lying down pose",
-    "胜利": "victory pose, arms raised cheering",
-    "失败": "defeated pose, sitting on ground tired",
-    "挥手": "waving one hand, friendly",
-    "思考": "thinking pose, hand on chin",
-}
+# 中文兼容映射 → prompt-hub 枚举（推荐直接用英文枚举）
+CN_ACTIONS = {"挥手": "WAVING", "奔跑": "RUNNING", "跳跃": "FLYING", "飞行": "FLYING",
+              "坐下": "SITTING", "跪地": "KNEELING", "舞蹈": "DANCING", "手持": "HOLDING", "行走": "WALKING"}
+CN_EXPRESSIONS = {"微笑": "HAPPY", "悲伤": "SAD", "惊讶": "SURPRISED", "生气": "ANGRY",
+                  "害羞": "SHY", "自信": "DETERMINED", "平静": "CALM", "兴奋": "EXCITED"}
+CN_VIEWS = {"正面": "FRONT", "侧面": "SIDE", "背面": "BACK"}
 
-# 表情表：中文名 → 英文表情（情绪特写）
-EXPRESSIONS = {
-    "微笑": "smiling, happy",
-    "惊讶": "surprised, eyes wide open",
-    "生气": "angry, frowning",
-    "悲伤": "sad, crying slightly",
-    "害羞": "shy, blushing",
-    "自信": "confident, determined",
-}
 
-# 三视图：视图名 → 英文提示词片段
-VIEWS = {
-    "front": "front view, facing forward",
-    "side": "side view, profile facing left",
-    "back": "back view, seen from behind",
-}
+def prompt_hub_sheet(name: str, desc: str, style: str, lighting: str,
+                     views: list[str], actions: list[str], expressions: list[str]) -> dict:
+    """调用 prompt-hub 渲染角色资产提示词（唯一真源）。"""
+    def norm(items, mapping):
+        return ",".join(mapping.get(i, i.upper()) for i in items)
+    cmd = ["uv", "run", "prompt-hub", "character",
+           "--name", name, "--desc", desc, "--style", style, "--lighting", lighting,
+           "--views", norm(views, CN_VIEWS),
+           "--actions", norm(actions, CN_ACTIONS),
+           "--expressions", norm(expressions, CN_EXPRESSIONS)]
+    r = subprocess.run(cmd, cwd=PROMPT_HUB_DIR, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError(f"prompt-hub 渲染失败: {r.stderr[-500:]}")
+    return json.loads(r.stdout)
 
 
 def sdxl(prompt: str, seed: int, out: str):
@@ -92,24 +87,18 @@ def seg_alpha(img_pil: Image.Image, rmbg_net) -> np.ndarray:
     """RMBG-1.4 抠图 → alpha mask（复用 triposg load_image 逻辑）"""
     img = np.array(img_pil.convert("RGB"))
     rgb_gpu = torch.from_numpy(img).cuda().float().permute(2, 0, 1) / 255.
-    resize = torchvision_resize(rgb_gpu, 1024)
+    resize = torch.nn.functional.interpolate(rgb_gpu.unsqueeze(0), size=(1024, 1024), mode="bilinear").squeeze(0)
     max_v = resize.flatten().max()
     norm = resize / max_v - torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1).cuda()
     with torch.no_grad():
         alpha = rmbg_net(norm.unsqueeze(0))[0][0]  # [1,1,1024,1024]
-    alpha = torch.nn.functional.interpolate(alpha,  # 保持 [1,1,H,W]
-                                            size=(img.shape[0], img.shape[1]),
-                                            mode="bilinear").squeeze()
+    alpha = torch.nn.functional.interpolate(alpha, size=(img.shape[0], img.shape[1]), mode="bilinear").squeeze()
     ma, mi = alpha.max(), alpha.min()
     alpha = (alpha - mi) / (ma - mi)
     alpha_np = (alpha * 255).to(torch.uint8).cpu().numpy()
     _, alpha_np = cv2.threshold(alpha_np, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     cleaned = remove_small_objects(label(alpha_np) > 0, min_size=200).astype(np.uint8) * 255
     return cleaned
-
-
-def torchvision_resize(t, size):
-    return torch.nn.functional.interpolate(t.unsqueeze(0), size=(size, size), mode="bilinear").squeeze(0)
 
 
 def to_alpha_png(src: str, dst: str, rmbg_net):
@@ -127,95 +116,87 @@ def to_alpha_png(src: str, dst: str, rmbg_net):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True, help="角色名（目录名，如 lumo）")
-    ap.add_argument("--desc", required=True, help="角色描述（英文，跨镜头固定复用的提示词短语）")
-    ap.add_argument("--style", default="cute cartoon, soft lighting, vibrant colors", help="画风（英文）")
-    ap.add_argument("--poses", nargs="*", default=[], help="动作列表（中文，见 POSES 表）")
-    ap.add_argument("--expressions", nargs="*", default=[], help="表情列表（中文，见 EXPRESSIONS 表，特写）")
+    ap.add_argument("--desc", required=True, help="角色描述（英文，跨镜头固定复用；含脚部/鞋细节）")
+    ap.add_argument("--style", default="cute healing fantasy", help="风格短语（英文）")
+    ap.add_argument("--lighting", default="soft volumetric glow, warm rim light", help="光照段（英文）")
+    ap.add_argument("--views", nargs="*", default=["FRONT", "SIDE", "BACK"], help="视角: FRONT SIDE BACK")
+    ap.add_argument("--actions", nargs="*", default=[], help="动作: WALKING RUNNING FLYING KNEELING DANCING HOLDING WAVING SITTING（或中文）")
+    ap.add_argument("--expressions", nargs="*", default=[], help="表情: HAPPY SAD SURPRISED ANGRY SHY DETERMINED CALM EXCITED（或中文）")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--no-3view", action="store_true", help="跳过三视图（单视图三张 + 拼版）")
-    ap.add_argument("--no-alpha", action="store_true", help="跳过抠图（只出白底原图）")
+    ap.add_argument("--no-3view", action="store_true", help="跳过三视图")
+    ap.add_argument("--no-alpha", action="store_true", help="跳过抠图")
     args = ap.parse_args()
+
+    print("[char] 调用 prompt-hub 渲染提示词...")
+    ph = prompt_hub_sheet(args.name, args.desc, args.style, args.lighting,
+                          args.views, args.actions, args.expressions)
+    print(f"[char] 渲染完成: {len(ph['trisheet'])} 视图 + 定妆 + {len(ph['actions'])} 动作 + {len(ph['expressions'])} 表情")
 
     out_dir = os.path.join(OUT_ROOT, args.name)
     os.makedirs(out_dir, exist_ok=True)
-    pose_dir = os.path.join(out_dir, "poses")
-    assets = {"name": args.name, "desc": args.desc, "style": args.style, "files": {}}
+    assets = {"name": args.name, "desc": args.desc, "style": args.style,
+              "lighting": args.lighting, "files": {}}
 
-    # Step 1: 三视图母版（三张单视图 + 拼版；单张生成可控，避免 SDXL 一图三视图失控）
+    # Step 1: 三视图（单视图 + 拼版）
+    view_files = []
     if not args.no_3view:
-        views_dir = os.path.join(out_dir, "views")
-        os.makedirs(views_dir, exist_ok=True)
-        view_files = []
-        for i, (view, en) in enumerate(VIEWS.items()):
-            vp = os.path.join(views_dir, f"{view}.png")
-            sdxl(f"{args.desc}, {args.style}, full body, {en}, plain white background, "
-                 f"single character, single view, high quality",
-                 args.seed + 10 + i, vp)
+        for i, (view, prompt) in enumerate(ph["trisheet"].items()):
+            vp = os.path.join(out_dir, "views", f"{view}.png")
+            sdxl(prompt, args.seed + 10 + i, vp)
             assets["files"][f"view_{view}"] = os.path.relpath(vp, out_dir)
             view_files.append(vp)
-        # 拼版：三张等宽横排 → character_sheet_3view.png
-        sheet = os.path.join(out_dir, "character_sheet_3view.png")
-        if not os.path.exists(sheet):
-            ims = [Image.open(p).convert("RGB") for p in view_files]
-            w = 1024
-            cell = w // 3
-            canvas = Image.new("RGB", (w, 1024), "white")
-            for j, im in enumerate(ims):
-                im2 = im.resize((cell, 1024), Image.LANCZOS)
-                canvas.paste(im2, (j * cell, 0))
-            canvas.save(sheet)
-        print(f"  [sheet] {sheet}")
-        assets["files"]["sheet_3view"] = os.path.relpath(sheet, out_dir)
+        if view_files:
+            sheet = os.path.join(out_dir, "character_sheet_3view.png")
+            if not os.path.exists(sheet):
+                ims = [Image.open(p).convert("RGB") for p in view_files]
+                cell = 1024 // len(ims)
+                canvas = Image.new("RGB", (1024, 1024), "white")
+                for j, im in enumerate(ims):
+                    canvas.paste(im.resize((cell, 1024), Image.LANCZOS), (j * cell, 0))
+                canvas.save(sheet)
+            print(f"  [sheet] {sheet}")
+            assets["files"]["sheet_3view"] = "character_sheet_3view.png"
 
-    # Step 2a: 正面全身定妆（生产锚定图）
+    # Step 2a: 正面定妆（I2V 锚定图）
     front = os.path.join(out_dir, "front.png")
-    sdxl(f"{args.desc}, {args.style}, full body, front view, standing pose, plain white background, "
-         f"single character, high quality",
-         args.seed + 1, front)
-    assets["files"]["front"] = os.path.relpath(front, out_dir)
+    sdxl(ph["fullbody"], args.seed + 1, front)
+    assets["files"]["front"] = "front.png"
 
-    # Step 2b: 动作资产（全身）
-    for i, pose in enumerate(args.poses):
-        en = POSES.get(pose, pose)
-        p = os.path.join(pose_dir, f"{pose}.png")
-        sdxl(f"{args.desc}, {args.style}, full body, {en}, plain white background, single character, high quality",
-             args.seed + 2 + i, p)
-        assets["files"][f"pose_{pose}"] = os.path.relpath(p, out_dir)
+    # Step 2b: 动作资产
+    for i, (action, prompt) in enumerate(ph["actions"].items()):
+        p = os.path.join(out_dir, "poses", f"{action}.png")
+        sdxl(prompt, args.seed + 2 + i, p)
+        assets["files"][f"action_{action}"] = os.path.relpath(p, out_dir)
 
-    # Step 2c: 表情资产（脸部特写）
-    expr_dir = os.path.join(out_dir, "expressions")
-    for i, expr in enumerate(args.expressions):
-        en = EXPRESSIONS.get(expr, expr)
-        p = os.path.join(expr_dir, f"{expr}.png")
-        os.makedirs(expr_dir, exist_ok=True)
-        sdxl(f"{args.desc}, {args.style}, close-up portrait, {en} facial expression, "
-             f"face filling the frame, plain white background, high quality",
-             args.seed + 20 + i, p)
+    # Step 2c: 表情资产（特写）
+    for i, (expr, prompt) in enumerate(ph["expressions"].items()):
+        p = os.path.join(out_dir, "expressions", f"{expr}.png")
+        sdxl(prompt, args.seed + 20 + i, p)
         assets["files"][f"expr_{expr}"] = os.path.relpath(p, out_dir)
 
-    # Step 3: RMBG 抠图 → 透明 PNG（全部白底图）
+    # Step 3: RMBG 抠图
     if not args.no_alpha:
         print("[char] 加载 RMBG-1.4 抠图模型...")
         rmbg_net = BriaRMBG.from_pretrained(RMBG_WEIGHTS).to("cuda").eval()
         to_alpha_png(front, os.path.join(out_dir, "front_alpha.png"), rmbg_net)
-        assets["files"]["front_alpha"] = "front_alpha.png"  # ← 视频锚定图
-        for pose in args.poses:
-            p = os.path.join(pose_dir, f"{pose}.png")
+        assets["files"]["front_alpha"] = "front_alpha.png"  # ← 视频锚定（注：I2V 用白底 front.png）
+        for action in ph["actions"]:
+            p = os.path.join(out_dir, "poses", f"{action}.png")
             if os.path.exists(p):
-                to_alpha_png(p, os.path.join(pose_dir, f"{pose}_alpha.png"), rmbg_net)
-                assets["files"][f"pose_{pose}_alpha"] = os.path.relpath(os.path.join(pose_dir, f"{pose}_alpha.png"), out_dir)
-        for expr in args.expressions:
-            p = os.path.join(expr_dir, f"{expr}.png")
+                to_alpha_png(p, os.path.join(out_dir, "poses", f"{action}_alpha.png"), rmbg_net)
+                assets["files"][f"action_{action}_alpha"] = os.path.relpath(os.path.join(out_dir, "poses", f"{action}_alpha.png"), out_dir)
+        for expr in ph["expressions"]:
+            p = os.path.join(out_dir, "expressions", f"{expr}.png")
             if os.path.exists(p):
-                to_alpha_png(p, os.path.join(expr_dir, f"{expr}_alpha.png"), rmbg_net)
-                assets["files"][f"expr_{expr}_alpha"] = os.path.relpath(os.path.join(expr_dir, f"{expr}_alpha.png"), out_dir)
+                to_alpha_png(p, os.path.join(out_dir, "expressions", f"{expr}_alpha.png"), rmbg_net)
+                assets["files"][f"expr_{expr}_alpha"] = os.path.relpath(os.path.join(out_dir, "expressions", f"{expr}_alpha.png"), out_dir)
 
     meta = os.path.join(out_dir, "character.json")
     with open(meta, "w") as f:
         json.dump(assets, f, ensure_ascii=False, indent=2)
 
     print(f"[char] 完成: {out_dir}")
-    print(f"[char] 视频锚定图（run_story --character {meta}）: front_alpha.png")
+    print(f"[char] 视频锚定图（run_story --character {meta}）: front.png（白底）")
 
 
 if __name__ == "__main__":
