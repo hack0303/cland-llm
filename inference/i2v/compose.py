@@ -126,7 +126,7 @@ def main():
         final = os.path.join(args.outdir, f"{args.prefix}.mp4")
         if audio_srcs:
             mixins = "".join(f"[a{i}]" for i in range(aidx))
-            labels.append(f"{mixins}amix=inputs={aidx}:normalize=0[aout]")
+            labels.append(f"{mixins}amix=inputs={aidx}:normalize=0,asetpts=PTS-STARTPTS[aout]")
             fc = labels
             amap = "[aout]"
             run(["ffmpeg", "-y", "-i", vconcat] + sum([["-i", s] for s in audio_srcs], []) +
