@@ -168,3 +168,35 @@
 - **根因**：判断条件用 `"voice" not in clip["output"]`（字段残留判断），storyboard.json 上一轮回填的 output 字段还在 → 误判已存在
 - **修复**：改为**文件存在判断**（os.path.exists(audio/sceneXXX_voice.wav)）
 - **预防**：幂等判断一律以"产物文件存在"为准，不要以元数据字段为准（字段可残留/可伪造）
+
+## [模型] Gemma-4 的 DSL 与 OpenAI API 是两套协议，适配要拆"渲染/解析"两层看
+
+- **日期**：2026-08-23 · **模块**：gemma4 推理服务（inference/gemma/gemma4.py）
+- **症状**：gemma4 工具调用"指令不兼容 OpenAI API"；曾误以为是 ollama 适配问题，实际自建 llama-cpp-python 服务也绕不开
+- **根因**：Gemma-4 原生 DSL（`<|turn>` 分轮、`<|channel>thought` 思考、`<|tool_call>call:name{args}` 工具调用、`<|tool_response>` 工具返回）与 OpenAI JSON 协议（messages/tool_calls/reasoning_content）是两套东西，引擎必须做双向翻译。实测 llama-cpp-python 0.3.20：**渲染层 ✅ 自动用 GGUF 内嵌官方模板**（Jinja2ChatFormatter，手写的 GEMMA_4_JINJA 可以删）；**解析层 ❌ 不把 DSL 转成 tool_calls JSON**（finish_reason 仍是 stop）——这层必须自己写
+- **修复**：删手写 Jinja 模板，保留手写转换层（正则提取 thought/tool_call + 清洗标签 + 有 tool_calls 时 content 置 None）；工具调用时加 stop 防"自导自演"
+- **预防**：换模型先分清"模板渲染"和"协议解析"两层是否被引擎覆盖；GGUF 里带 tokenizer.chat_template 的模型优先让引擎渲染，别急着手写模板
+
+## [模型] llama-cpp-python 流式工具调用：stop 参数失效 + DSL 跨 token 泄漏
+
+- **日期**：2026-08-23 · **模块**：gemma4.py 流式 SSE
+- **症状**：stream=true 时原始 `<|tool_call>` 标签一个 token 一个 token 漏给客户端，模型继续"自导自演"输出假的 `<|tool_response>` 和结果文本；非流式下同样的 stop 参数是有效的
+- **根因**：① llama-cpp-python 流式模式不执行 stop 序列（物理截断只能自己做）；② DSL 标签被切碎成多个 token 到达，逐 token 透传必然泄漏；③ 工具参数里的转义标签 `<|"|>` 会让"尾部暂缓"判断误判（rfind("<") 找到的是转义标签的 `<`）
+- **修复**：流式状态机——buffer 累积，检测到 `<|tool_call` 出现即**暂停下发一切文本**，攒到完整闭合标签后一次性转成 OpenAI tool_calls delta 并 return 物理截断；thought 块完整闭合后才转 reasoning_content 下发
+- **预防**：流式处理任何带 DSL 的模型都先想"标签会不会跨 token"，一律缓冲到完整闭合再动作；不要依赖 stop 参数做工具截断
+
+## [模型] ollama 报 `unknown model architecture: 'gemma4'` ≠ P40 不兼容（诊断顺序）
+
+- **日期**：2026-08-23 · **模块**：ollama 0.18.2（gemma4 加载）
+- **症状**：ollama 拉 gemma4 报 `error loading model: unknown model architecture: 'gemma4'`，一度怀疑"新版 ollama 不兼容 P40"
+- **根因**：**版本太老**——ollama 0.18.2（3 月版）内核没有 gemma4 架构支持；与 GPU 无关。实测 ollama 0.18.2 的 cuda_v12 runner（CUDA 12.8）在 535 驱动上 `cudaGetDeviceCount=2` 正常识别 2 张 P40，libggml-cuda.so 含 sm_61 cubin；只有 cuda_v13（CUDA 13）需要 r580+ 驱动。llama.cpp b10488（新版 ollama 内核）源码也保留 61-virtual
+- **修复**：gemma4 走自建 llama-cpp-python 0.3.20（内核认识 gemma4 + sm_61）；ollama 需升级到支持 gemma4 的新版（v0.32.15+）
+- **预防**：模型加载失败先看日志里的架构报错，别甩锅给 GPU/驱动；验证"引擎 vs 驱动"兼容性的顺序：dlopen runner → cudaGetDeviceCount → 真跑一个模型
+
+## [模型] langchain Chroma.add_texts 忽略传入的 embeddings，索引维度从没生效过
+
+- **日期**：2026-08-23 · **模块**：embedding 漏斗检索（PythonTest example_embeddings_03/04）
+- **症状**：03 脚本"256 维索引 + metadata 存全量"方案，实测 Chroma 集合里存的却是 1024/768 维全量向量；04 脚本用 add_texts 传 256 维也报 `Embedding dimension 256 does not match collection dimensionality 1024`
+- **根因**：langchain-community 0.0.38 的 `add_texts` 签名只有 `(texts, metadatas, ids, **kwargs)`——**没有 embeddings 参数**！传进去被 `**kwargs` 静默吞掉，函数内部自己调 `embedding_function.embed_documents()` 重新生成全量维度。Matryoshka 截断索引方案因此从未真正生效（存的是全量，只是"看起来"没问题）
+- **修复**：弃用 langchain 包装器，直接走 **chromadb 原生 API**（`PersistentClient` + `collection.add(embeddings=...)` / `collection.query(query_embeddings=...)`），不指定 collection 的 embedding_function，维度完全由传入向量决定
+- **预防**：任何"手动控制向量维度/自定义 embeddings"的场景，先查库版本签名（`inspect.signature`）确认参数真的存在，再写业务代码；传参前先 `col.get(include=['embeddings'])` 验证存储维度
