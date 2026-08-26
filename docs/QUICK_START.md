@@ -19,6 +19,7 @@ bash scripts/start_services.sh --with-asr # 额外启动语音识别（10334）
 | 端口 | 服务 | 模型 | 环境 | GPU | 用法 |
 |---|---|---|---|---|---|
 | 10331 | 文生图 | SDXL base 1.0 | base | 0 | `POST /generate` 提示词→PNG |
+| 10335 | 手脚修复管线 | SDXL+ControlNet+Inpaint+ESRGAN | base | 1 | 见 `docs/sdxl/hand_pipe.md`，`POST /pipeline` 端到端 |
 | 10332 | 图生 3D | TripoSG 1.5B | triposg_env | 1 | `POST /generate` 图片→GLB |
 | 10333 | 语音合成 | Spark-TTS 0.5B | audio_env | 1 | `POST /generate` 文本→WAV |
 | 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本（**默认停**） |

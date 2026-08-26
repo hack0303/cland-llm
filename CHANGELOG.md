@@ -4,6 +4,26 @@ description: record your changes
 
 # Changelog
 
+## 20260826
+
+### Changes
+
+- 推理/手脚修复管线：新增 `inference/sdxl/hand_pipe/` 工业级 AI 生图手脚崩坏修复服务（GPU 1 / 端口 10335），五环节：SDXL txt2img(8bit) → ControlNet OpenPose 骨骼约束（手部 21 点）→ DWPose 检测手部 → SDXL-inpaint 局部重绘 → Real-ESRGAN 4x 超分；`POST /pipeline` 端到端 4 场景实测 328-358s/场景，DWPose 客观验收双手 21/21 点
+- 推理/检测：新增 `dwpose.py` DWPose 全身 133 点姿态检测（yolox_l onnx 标准 grid+stride decode + RTMPose SimCC 双输出 + top-down 仿射预处理，onnxruntime CPU 不占 GPU）
+- 推理/超分：新增 `rrdbnet.py` Real-ESRGAN RRDBNet 纯 torch 实现（官方/ComfyUI 双格式权重 key 适配，4x-UltraSharp + RealESRGAN_x4plus 双模型 1024→4096 验证）
+- 推理/LoRA：新增 `test_lora.py` 手部 LoRA 对比测试；调研 5 候选后确认 `Benevolent/Perfect Hands v2`（SDXL 格式）有效（peace_sign 左手关键点 10→16），实现 `load_kohya_lora_manual` 手动注入（绕开 diffusers 0.39 rank 推断 bug）
+- 模型：下载 ControlNet SDXL 三件套（openpose/depth/canny 11.8GB）、SDXL-inpaint（20GB，diffusers 镜像）、DWPose（350MB）、ESRGAN（134MB）、手部 LoRA 4 个候选（1.7GB）
+- 环境：`onnxruntime`、`controlnet_aux`、`ultralytics`、`onnx` 安装（清华源）；`TORCHINDUCTOR_COMPILE_THREADS=1` 防 15GB 内存 OOM（100 个 compile_worker 子进程）
+- 文档：新增 `docs/sdxl/hand_pipe.md` 管线技术手册（环节测试结论/API/踩坑 10 条）；`docs/QUICK_START.md` 服务总览登记 10335；新增 `TODO-hand-pipe.md` 任务看板（18 完成/14 待办）
+
+### Fixes
+
+- 修复：diffusers 0.39 `load_in_8bit` 参数弃用 → `PipelineQuantizationConfig(quant_backend="bitsandbytes_8bit")`；单 CN 传 list 挂 MultiControlNetModel（显式包装 + image/scale 传 list）
+- 修复：超分权重加载静默失败（4x-UltraSharp 为 ComfyUI 格式、原实现架构错误），重写 RRDBNet（RDB1/2/3 三子块）+ 双格式 key 适配，输出黑图/噪声修复为正常图
+- 修复：DWPose yolox 检测（标准 grid+stride decode 后 conf 0.95）、RTMPose SimCC 解码（非 heatmap）、仿射变换（去掉 mmpose 老版 ×200 因子）
+- 修复：显存 OOM（三 CN 常驻 22.4GB → 只常驻 openpose 14.3GB + empty_cache + expandable_segments）
+- 修复：整机内存 OOM 重启（100 个 torch compile_worker 吃光 15GB RAM，限制 `TORCHINDUCTOR_COMPILE_THREADS`）
+
 ## 20260815
 
 ### Changes
