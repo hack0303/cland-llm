@@ -200,3 +200,59 @@
 - **根因**：langchain-community 0.0.38 的 `add_texts` 签名只有 `(texts, metadatas, ids, **kwargs)`——**没有 embeddings 参数**！传进去被 `**kwargs` 静默吞掉，函数内部自己调 `embedding_function.embed_documents()` 重新生成全量维度。Matryoshka 截断索引方案因此从未真正生效（存的是全量，只是"看起来"没问题）
 - **修复**：弃用 langchain 包装器，直接走 **chromadb 原生 API**（`PersistentClient` + `collection.add(embeddings=...)` / `collection.query(query_embeddings=...)`），不指定 collection 的 embedding_function，维度完全由传入向量决定
 - **预防**：任何"手动控制向量维度/自定义 embeddings"的场景，先查库版本签名（`inspect.signature`）确认参数真的存在，再写业务代码；传参前先 `col.get(include=['embeddings'])` 验证存储维度
+
+## [diffusers] 0.39 弃用 `load_in_8bit=`：pipeline 层要 PipelineQuantizationConfig，模型层要模型级 Config
+
+- **日期**：2026-08-26 · **模块**：手脚修复管线（inference/sdxl/hand_pipe）
+- **症状**：`from_pretrained(..., load_in_8bit=True)` 打出 "Keyword arguments not expected ... will be ignored" 警告，8bit 未生效，fp16 全量加载 → 多模型常驻直接 OOM 崩机
+- **根因**：diffusers 0.39 起 pipeline 级 8bit 必须 `PipelineQuantizationConfig(quant_backend="bitsandbytes_8bit", quant_kwargs={"load_in_8bit": True}, components_to_quantize=[...])`；而模型层（ControlNetModel.from_pretrained）只认模型级 QuantizationConfigMixin，传 PipelineQuantizationConfig 报 `no attribute quant_method`
+- **修复**：pipeline 用 PipelineQuantizationConfig；ControlNet 单独加载时不量化（fp16），或由 pipeline 的 components_to_quantize 统一处理
+- **预防**：升级 diffusers 后先查 CHANGELOG/源码确认量化 API；加载后看 `torch.cuda.max_memory_allocated` 判断 8bit 是否真生效（8bit unet 约 fp16 一半）
+
+## [diffusers] `controlnet=[单模型]` 报 "pipeline is not a Module subclass"；0.39 必须显式 MultiControlNetModel
+
+- **日期**：2026-08-26 · **模块**：管线 cn_pipe 加载
+- **症状**：`StableDiffusionXLControlNetPipeline.from_pretrained(controlnet=[cn])` 在构造器 `MultiControlNetModel([cn])` 处抛 `TypeError: ...StableDiffusionXLControlNetPipeline is not a Module subclass`（ModuleList 里混入 pipeline 对象）；换单实例 `controlnet=cn` 又在 check_inputs 走 `assert False`
+- **根因**：0.39 量化路径下 from_pretrained 对 list 参数处理有 bug（list 元素被替换/污染）；单实例时 8bit 量化包装导致 controlnet 类型既不是 ControlNetModel 也不是 MultiControlNetModel，check_inputs 的 else 分支直接 assert False
+- **修复**：先 `ControlNetModel.from_pretrained` 加载模型，再显式 `MultiControlNetModel([cn])` 传实例；调用时 image 传 `[cond_img]`、controlnet_conditioning_scale 传 `[strength]`（Multi 约定）
+- **预防**：0.39 下 ControlNet 相关一律走「显式 MultiControlNetModel + list 传参」模板，别信老版本的单实例写法
+
+## [超分] RRDBNet 权重加载静默失败：strict=False + 命名不匹配 → 黑图/噪声，mean 值还骗过了验收
+
+- **日期**：2026-08-26 · **模块**：rrdbnet.py
+- **症状**：4x-UltraSharp 超分输出全黑（mean 4.5）；RealESRGAN_x4plus 输出 mean 176.7 看似正常实为随机噪声；端到端 step4 被 DWPose 检出 0 人
+- **根因**：三层问题叠加——① 我的 RRDBNet 实现是简化 5C 块，真实架构是 RDB1/2/3 三子块堆叠（RRDB）；② 4x-UltraSharp 是 ComfyUI 命名（model.0 / 大写 RDB / 紧凑层号 3,6,8,10），x4plus 是官方小写 rdb 命名；③ `load_state_dict(strict=False)` 全不匹配时**静默丢弃**，模型以随机权重运行
+- **修复**：重写为正确 RRDB 架构（rdb1/2/3 小写，匹配官方）+ `_adapt_keys` 双格式适配（官方直通 / ComfyUI 去 model 前缀+大写转小写+去 .0 序号）+ 加载后校验（missing>10 或 unexpected>10 直接 raise）
+- **预防**：加载预训练权重后**必须校验匹配数**（missing/unexpected 计数），并跑真实输入看输出分布（mean/std 与输入同量级）；strict=False 是静默失败重灾区
+
+## [检测] DWPose yolox onnx 不是"resize 就能跑"：标准 grid+stride decode + SimCC 双输出
+
+- **日期**：2026-08-26 · **模块**：dwpose.py
+- **症状**：直接 resize 640 + 简单阈值 → 检不出人（conf 全 ~0.0003）；关键点模型输出 shape (1,133,576)/(1,133,768) 不是 heatmap，argmax 后坐标全在边缘（335124 这种天文数字）
+- **根因**：yolox_l.onnx（yzd-v/DWPose）输出是**未解码**的 head 输出，必须 `(tx+grid)*stride` 解码 + `exp(tw)*stride`；dw-ll_ucoco_384.onnx 是 RTMPose SimCC 表示（simcc_x/simcc_y 双输出），置信度 = (max_x+max_y)/2，位置 ÷simcc_split_ratio=2，且预处理是 bbox→center/scale(×1.25)→仿射变换（无黑边）+ ImageNet 归一化（RGB, float32）
+- **修复**：按 sd-webui-controlnet 的 cv_ox_det.py/cv_ox_pose.py 标准实现重写（grid+stride decode + NMS、SimCC 解码、top_down_affine）
+- **预防**：onnx 模型先打印输入输出 shape 并对照官方推理代码，不要凭经验猜后处理；检测类模型输出 conf 全低时先怀疑 decode/预处理而非阈值
+
+## [环境] 15GB 内存被 100 个 torch compile_worker 吃光 → 整机 OOM 重启（服务全部丢失）
+
+- **日期**：2026-08-26 · **模块**：机器运维
+- **症状**：服务加载途中整机重启（/tmp 日志清空、GPU 全空）；事后 `free -g` 显示 15GB 全满，`pgrep -fc compile_worker` 100 个
+- **根因**：torch 2.7 每次 import 触发 inductor compile_worker 池（默认 32 个/进程 × 3 个服务进程 ≈ 100 个），每个 ~150MB，15GB 内存直接耗尽触发 OOM killer
+- **修复**：启动命令加 `TORCHINDUCTOR_COMPILE_THREADS=1`；15GB 机器上**串行**启动多服务（同时加载权重峰值内存超限）
+- **预防**：小内存机器跑 torch 服务先设 compile 线程数；内存不足时优先查子进程数而非只盯主进程
+
+## [显存] 多 ControlNet 常驻导致推理峰值 OOM：最小常驻集 + empty_cache + expandable_segments
+
+- **日期**：2026-08-26 · **模块**：pipe_server.py
+- **症状**：base 8bit + 3×CN fp16 + inpaint 8bit 常驻 19.5GB，一次推理后 22.4GB，`/upscale` 需 4GB → OOM
+- **根因**：P40 24GB 显存，静态模型 + 推理峰值缓存（cuda cache 不自动释放）叠加超限；depth/canny 非主线环节也常驻浪费 5GB
+- **修复**：只常驻 openpose（管线核心），depth/canny 懒加载重建 cn_pipe；每次推理后 `torch.cuda.empty_cache()`；`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 防碎片。静态 19.5→14.3GB，4 场景端到端含超分全通过
+- **预防**：多模型服务先算静态总和，留 ≥6GB 推理余量；非主线组件一律懒加载
+
+## [diffusers] load_lora_weights 对 kohya 单文件报 rank 推断 IndexError（前缀 bug）→ 手动注入
+
+- **日期**：2026-08-26 · **模块**：LoRA 接入（test_lora.py）
+- **症状**：`pipe.load_lora_weights(perfect_hands_v2.safetensors)` 抛 `IndexError: list index out of range`（get_peft_kwargs 里 rank_dict 为空）；手动转换后 `lora_linear_layer` 格式又加载出 0 权重（警告 No LoRA keys found）
+- **根因**：0.39 的 `_load_lora_into_text_encoder` 用裸模块名拼 `{name}.lora_B.weight` 推断 rank，但转换后的 key 带 `text_encoder.` 前缀 → 永不匹配 → rank_dict 空；而 unet 转换输出 `lora.down/up` 与 peft 的 `lora_A/B` 又不对应
+- **修复**：放弃 diffusers LoRA 系统，实现 `load_kohya_lora_manual`：`_convert_non_diffusers_lora_to_diffusers` 转出 lora_linear_layer.down/up + alpha → `delta = alpha/rank × up@down` 直接 add 到模块权重（64 层 Linear，scale 0.6 生效）
+- **预防**：diffusers LoRA 加载崩/0 权重时，先验证转换链（kohya→lora_linear_layer→peft 的 key 前后缀），不行就手动注入——LoRA 数学就是 delta=alpha/rank×up@down，不依赖库实现
