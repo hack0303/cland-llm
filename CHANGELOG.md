@@ -4,6 +4,14 @@ description: record your changes
 
 # Changelog
 
+## 20260906
+
+### Changes
+
+- 推理/文本 LLM：gemma4（10303）单卡部署——`gemma4.py` 顶部 `CUDA_VISIBLE_DEVICES=1`（setdefault，可被显式环境变量覆盖），26B-A4B Q4 权重 + 16K KV 全压 1 号 P40（~20GB/24GB），0 号卡留给 OCR 等分卡并行；单卡免去双卡张量并行的 PCIe 卡间同步开销
+- 推理/文本 LLM：gemma4 每请求打印 ENTER/DONE 日志（请求编号/线程/总耗时/prompt+completion tokens）到 /tmp/gemma4-server.log，批量任务可据此对账
+- 推理/文本 LLM：新增 `inference/gemma/bench10303.py` 吞吐/并发复测脚本；实测基线（单卡 GPU1）：decode 稳态 43-48 tok/s、batch=10 画像 ~10s/请求、7300 人全量约 2.0-2.6h；并发 1/2/4 路无聚合收益（服务端日志实证 ENTER 恒在上一 DONE 后，并发=1），批量管道建议 workers=1 + 单请求做厚
+
 ## 20260826
 
 ### Changes

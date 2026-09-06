@@ -1,8 +1,18 @@
 import json
+import os
 import re
+import time
+import threading
+import itertools
 from typing import Dict, Any, List, Optional, Tuple
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
+
+# 本机固定只用 1 号 P40（单卡 24GB 装得下：16GB 权重 + 16K KV ~3GB + 缓冲 ≈ 20GB）。
+# GPU0 常驻 OCR 服务，按 C-Land 分卡并行惯例 gemma 独占 GPU1（免 PCIe 卡间同步，decode 更快）。
+# 如需临时改卡/临时双卡：启动前显式 export CUDA_VISIBLE_DEVICES=... 即可覆盖 setdefault。
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "1")
+
 from llama_cpp import Llama
 
 # --- 1. 初始化模型 ---
@@ -93,6 +103,8 @@ def to_openai_response(r: Dict[str, Any], thought: str, tool_calls: List[Dict], 
 
 app = FastAPI(title="Gemma-4 OpenAI Converter")
 
+_counter = itertools.count(1)
+
 TOOL_PATTERN = re.compile(r"<\|tool_call>call:([\w\-]+)\{(.*?)\}<tool_call\|>", re.DOTALL)
 THOUGHT_CLOSED = re.compile(r"<\|channel>thought\n?(.*?)\n?<channel\|>", re.DOTALL)
 
@@ -178,9 +190,13 @@ async def stream_generator(kwargs: Dict[str, Any]):
 
 @app.post("/v1/chat/completions")
 async def chat_endpoint(request: Request):
+    _req_id = next(_counter)
+    _t0 = time.time()
     body = await request.json()
     messages = body.get("messages", [])
     tools = body.get("tools")  # 透传给模板渲染，让模型知道可用工具
+    print(f"[req#{_req_id}] ENTER thr={threading.current_thread().name} "
+          f"stream={bool(body.get('stream'))} max_tokens={body.get('max_tokens')}", flush=True)
 
     kwargs: Dict[str, Any] = dict(
         messages=messages,
@@ -198,6 +214,8 @@ async def chat_endpoint(request: Request):
         return StreamingResponse(stream_generator(kwargs), media_type="text/event-stream")
 
     r = llm.create_chat_completion(**kwargs)
+    print(f"[req#{_req_id}] DONE  thr={threading.current_thread().name} total={time.time()-_t0:.2f}s "
+          f"p={r.get('usage',{}).get('prompt_tokens')} c={r.get('usage',{}).get('completion_tokens')}", flush=True)
 
     content = r["choices"][0]["message"].get("content") or ""
     thought, tool_calls, clean = parse_gemma_content(content)
