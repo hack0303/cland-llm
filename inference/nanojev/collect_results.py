@@ -93,7 +93,13 @@ def main():
             "p95_ms": round(d["latency_ms"]["p95"], 1),
             "requests_per_s": round(d["throughput"]["requests_per_s"], 2),
         }
-    d = load("bench_von_10339.json")
+    d = load("bench_von_10339_fp32.json")
+    if d:
+        out["von_http"]["cuda_fp32"] = {k: {
+            "median_ms": round(v["latency_ms"]["median"], 1),
+            "min_ms": round(v["latency_ms"]["min"], 1),
+        } for k, v in d["benchmarks"].items()}
+    d = load("bench_von_10339_bf16.json")
     if d:
         out["von_http"]["cuda_bf16"] = {k: {
             "median_ms": round(v["latency_ms"]["median"], 1),

@@ -3,7 +3,9 @@
 #
 # 用法: ./start_von.sh [port] [device]
 #   port    默认 10339
-#   device  默认 cuda（VON_DEVICE 透传；P40 上 bf16 由 torch 模拟路径支撑）
+#   device  默认 cuda（VON_DEVICE 透传）
+#   dtype   默认 fp32（VON_DTYPE；P40 无原生 BF16，bf16 模拟会导致决策边界精度回退，
+#           见 patches/von-p40-fp32.patch，setup.sh 已自动应用）
 #
 # 权重: /mnt/data/ai_workspace/models/von/von-1.0
 #       通过 von/checkpoints/von-modernbert-rlcd 符号链接被 von 本地加载（不联网）
@@ -35,7 +37,7 @@ fi
 
 LOG="logs/von-server-${PORT}.log"
 cd von
-nohup env CUDA_VISIBLE_DEVICES="${GPU}" VON_DEVICE="${DEVICE}" \
+nohup env CUDA_VISIBLE_DEVICES="${GPU}" VON_DEVICE="${DEVICE}" VON_DTYPE="${VON_DTYPE:-fp32}" \
   ../venv/bin/von serve --host 127.0.0.1 --port "${PORT}" \
   > "../${LOG}" 2>&1 &
 echo "Von 服务启动中 pid=$! port=${PORT} device=${DEVICE}"

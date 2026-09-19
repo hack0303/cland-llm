@@ -185,6 +185,16 @@
     }
   },
   "von_http": {
+    "cuda_fp32": {
+      "single_noul": {
+        "median_ms": 32.6,
+        "min_ms": 27.0
+      },
+      "fanout_3q": {
+        "median_ms": 93.1,
+        "min_ms": 92.7
+      }
+    },
     "cuda_bf16": {
       "single_noul": {
         "median_ms": 61.1,

@@ -270,3 +270,10 @@
 - **根因**：新版 torch 的 `is_bf16_supported()` 默认包含 emulation 检测，Pascal 卡返回 True；bf16 算子实际走慢速模拟路径，P40 无原生 BF16/Tensor Core
 - **修复**：服务与基准默认 `--precision fp32`；bf16 仅保留为对照档
 - **预防**：老卡上 dtype 默认值必须实测（固定输入各跑 20 次取 p50），不能依赖 `is_bf16_supported()`
+
+## [精度] P40 模拟 bf16 让 von 在决策边界翻转结论（官方测试 CPU 过 / CUDA 挂）
+- **日期**：2026-09-20 · **模块**：inference/nanojev（Von，torch 2.7.1+cu118）
+- **症状**：von 自带 `tests/test_fanout.py` 在 CUDA(P40) 失败（`is_blocking` noul=0.498，期望 >0.5），同一用例 `VON_DEVICE=cpu` 通过；`test_openjev_compatibility` 的归一化断言踩线（四舍五入后 1.001 vs 1.0±0.001）
+- **根因**：von 后端自动 dtype：`device.type=="cuda"` 且 `is_bf16_supported()` → bf16；P40 无原生 BF16，torch 2.7 的 emulation 检测让其返回 True，实际走慢速模拟且低位精度损失；noul 是两路 entailment logits 的 softmax，logits 接近时精度损失直接翻转 0.5 边界结论
+- **修复**：`patches/von-p40-fp32.patch` 增加 `VON_DTYPE` 显式覆盖（改动 10 行内）；`start_von.sh` 默认 `VON_DTYPE=fp32`；CUDA 全套测试 23 passed，服务端 noul=0.5092
+- **预防**：凡「两路 softmax / 阈值门控 / 归一化」型模型服务，dtype 必须用真实用例对照（CPU vs CUDA、fp32 vs bf16），不能信任 `is_bf16_supported()`；上游测试套件是最好的探针

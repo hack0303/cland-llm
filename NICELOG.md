@@ -64,3 +64,9 @@
 - **价值**：避免"API 说支持就默认 bf16"的隐性 1.5× 性能损失；同精度口径还让复现数字对齐
 - **落地**：`inference/nanojev/start_server.sh` 默认 `--precision fp32`；`docs/systemone/README.md`
 - **复用**：Pascal 及更老卡上先跑 dtype 对照再定默认值；`is_bf16_supported()` 只作参考，不作决策依据
+
+### 10. 上游测试套件即部署验收：von 23 passed 作为 drop-in 证据
+- **实践**：von 部署后用其自带 `tests/`（FastAPI TestClient + OpenJev 契约兼容 + primitives/fanout/patterns/presets）做验收：CUDA fp32 下 **23 passed / 1 deselected**（trio 为可选依赖）；其中 `test_fanout` 的阈值断言（noul>0.5、score>1.0）直接暴露了 P40 模拟 bf16 的精度回退（CPU 过 / CUDA 挂）
+- **价值**：无需自造验收集，上游测试即「协议对等 + 最小质量门禁」；阈值型断言是可复现的 dtype 问题探针（对照 CPU/CUDA 一次定位）
+- **落地**：`inference/nanojev/patches/von-p40-fp32.patch` + `start_von.sh` 默认 `VON_DTYPE=fp32`；结果记录在 `inference/nanojev/README.md` §5.6 与 `docs/systemone/README.md`
+- **复用**：部署任何开源模型服务，先跑上游测试套件再自评；对「两路 softmax/阈值」模型固定用 fp32 并保留一组 dtype 对照

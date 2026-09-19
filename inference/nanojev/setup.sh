@@ -11,6 +11,12 @@ HERE="$PWD"
 [ -d NanoJev/.git ] || git clone --depth 1 git@github.com:TianyuCodings/NanoJev.git
 [ -d von/.git ]     || git clone --depth 1 git@github.com:wfzyx/von.git
 
+# 1b) P40 补丁：VON_DTYPE 显式覆盖 dtype（默认 fp32；不改补丁则 CUDA bf16 模拟会精度回退）
+if git -C von apply --check patches/von-p40-fp32.patch 2>/dev/null; then
+  git -C von apply patches/von-p40-fp32.patch
+  echo "已应用 patches/von-p40-fp32.patch"
+fi
+
 # 2) venv（复用 base conda 的 torch 2.7.1+cu118；P40 可用档位）
 [ -d venv ] || /home/alice/miniconda3/bin/python -m venv --system-site-packages venv
 

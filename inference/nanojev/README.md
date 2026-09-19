@@ -15,6 +15,7 @@ inference/nanojev/
 ├── von/                     # 上游源码 + checkpoints/von-modernbert-rlcd → 本地权重软链
 ├── venv/                    # 独立 venv（--system-site-packages 复用 base 的 cu118 torch）
 ├── sitecustomize.py         # torch 2.7 兼容 shim（torch._native.triton_utils no-op）
+├── patches/von-p40-fp32.patch  # von dtype 显式覆盖（VON_DTYPE；P40 默认 fp32，setup.sh 自动应用）
 ├── download_variant.py      # NanoJev variant 权重下载（HF 镜像）
 ├── download_von.py          # von-1.0 权重下载（HF 镜像）
 ├── download_qwen.py         # 未调 Qwen3-0.6B 基线（固定 revision，默认 HF 缓存）
@@ -76,6 +77,8 @@ HF_ENDPOINT=https://hf-mirror.com venv/bin/python download_dataset.py           
 |---|---|---|---|
 | NanoJev 决策服务（maze 默认） | **10338** | `./start_server.sh [variant] [port] [precision]` | `POST /api/evaluate`（boolean/choice/score，返回完整分布） |
 | Von 决策服务 | **10339** | `./start_von.sh [port] [device]` | `POST /v1/systemone`（TypeSafe drop-in：noul/choice/score） |
+
+两者均默认 **fp32**（P40 无原生 BF16；模拟 bf16 慢 1.5–1.9× 且影响决策边界精度，见「兼容性」节）。
 
 ```bash
 ./start_server.sh local_atomic_seed17 10338 fp32     # NanoJev（服务 + 官方 web 回放 UI 同端口）
@@ -177,16 +180,17 @@ BENCH_GPU=1 ./run_bench_snake.sh qwen fp32     # 未调 Qwen 对照
 
 ### 4.3 服务延迟 / 显存 / 吞吐（P40）
 
-| 指标 | NanoJev fp32 | NanoJev bf16 | Von（cuda，bf16） |
-|---|---:|---:|---:|
+| 指标 | NanoJev fp32 | NanoJev bf16 | Von fp32 | Von bf16 |
+|---|---:|---:|---:|---:|
 | 权重加载 | 46.2s | 32.5s | 首次请求 ~45s（懒加载） |
-| 参数显存（实测） | 2.39 GB allocated / 2.55 GB 峰值 | 2.39 / 3.60 GB 峰值 | 约 1.0 GB（bf16 790MB + 上下文） |
+| 参数显存（实测） | 2.39 GB allocated / 2.55 GB 峰值 | 2.39 / 3.60 GB 峰值 | 约 1.8 GB | 约 1.0 GB |
 | 单 state 4 题（maze 决策） | **136.7 ms**（29.3 q/s） | 200.5 ms（20.0 q/s） | — |
 | 4 states 16 题批处理 | 452.8 ms（35.3 q/s） | 651.6 ms（24.6 q/s） | — |
-| 混合 3 题（choice+bool+score） | 82.4 ms（36.4 q/s） | 118.3 ms（25.4 q/s） | 单 noul 61 ms；3 题 fan-out 150 ms |
+| 混合 3 题（choice+bool+score） | 82.4 ms（36.4 q/s） | 118.3 ms（25.4 q/s） | — | — |
+| Von 单 noul / 3 题 fan-out | — | — | **32.6 / 93.1 ms** | 61.1 / 150.2 ms |
 | HTTP 端到端（4 题） | 134.4 ms p50 / 7.44 req/s | — | — |
 
-**结论：P40 上 fp32 比 bf16（模拟）快约 1.5×，且与官方数值口径更接近，默认用 fp32。**
+**结论：P40 上 fp32 比 bf16（模拟）快 1.5–1.9×，且与官方数值口径更接近，默认用 fp32。**
 （P40 无原生 BF16；torch 2.7 的 `is_bf16_supported()` 对本卡返回 True 是「模拟」语义，实际 bf16 走慢路径。）
 
 ### 4.4 生成紧凑结果表
@@ -202,6 +206,9 @@ venv/bin/python collect_results.py   # → runs/benchmark_summary.json
 3. **数值敏感性**：NanoJev 的 maze/snake 结果对精度不敏感（fp32/bf16 与原记录一致或差 1）；未调 Qwen 对精度敏感（fp32/bf16 轨迹不同），复现对照时需固定 `--precision`。
 4. **服务限制**（上游 `serve_decisions.py`，未改动）：单请求 ≤32 states / 96 questions / 256 candidate paths；HTTPServer 单线程。
 5. **Von 服务注意**：`/health` 恒返回 ok（不做模型状态检查）；模型在首个推理请求时加载；noul 判定为 entailment 两路 softmax，属模型行为，长语义先验题可能偏中性（经典 NLI 判定 sanity 正常）。
+6. **Von dtype 补丁（重要）**：von 自动 dtype 在 CUDA 上优先 bf16（`is_bf16_supported()`）；P40 模拟 bf16 会使决策边界精度回退——官方测试 `test_fanout.py` 的 `is_blocking` noul 为 0.498（期望 >0.5），CPU/fp32 通过而 CUDA/bf16 失败。`patches/von-p40-fp32.patch` 增加 `VON_DTYPE` 覆盖，`setup.sh` 自动应用，`start_von.sh` 默认 `VON_DTYPE=fp32`。
+   - 补丁后本机 CUDA 跑 von 自带测试套件：**23 passed / 1 deselected**（deselected 为可选依赖 trio 用例）。
+   - 补丁后服务端复测：`is_blocking` noul **0.5092**、severity **1.11**、category=storage（用例期望 >0.5 / >1.0 / storage，全部满足）。
 
 ## 六、许可与出处
 

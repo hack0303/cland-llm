@@ -19,6 +19,7 @@ description: record your changes
 - 修复：上游评估脚本在 torch 2.7 报 `ModuleNotFoundError: torch._native`（上游记录 torch 2.14）→ `sitecustomize.py` 提供 no-op 等价 shim，不改上游源码
 - 修复：hf-mirror 长下载断连（`httpx.RemoteProtocolError`，von-1.0 到 980MB/1.58GB）→ 重跑同命令续传完成
 - 优化：P40 上 `is_bf16_supported()`=True 为模拟语义（bf16 实测比 fp32 慢 ~1.5×）→ 服务与基准默认 `--precision fp32`
+- 修复：Von 自动 dtype 在 P40 选 bf16 模拟导致决策边界精度回退（官方 `test_fanout` noul 0.498 vs fp32 0.509）→ 新增 `patches/von-p40-fp32.patch`（`VON_DTYPE` 覆盖）+ `start_von.sh` 默认 fp32；CUDA 跑 von 全套测试 **23 passed**，服务端复测 noul 0.5092，fp32 延迟 32.6ms/单题、93.1ms/3 题（比 bf16 快 ~1.9×）
 
 ## 20260906
 
