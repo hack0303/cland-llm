@@ -256,3 +256,17 @@
 - **根因**：0.39 的 `_load_lora_into_text_encoder` 用裸模块名拼 `{name}.lora_B.weight` 推断 rank，但转换后的 key 带 `text_encoder.` 前缀 → 永不匹配 → rank_dict 空；而 unet 转换输出 `lora.down/up` 与 peft 的 `lora_A/B` 又不对应
 - **修复**：放弃 diffusers LoRA 系统，实现 `load_kohya_lora_manual`：`_convert_non_diffusers_lora_to_diffusers` 转出 lora_linear_layer.down/up + alpha → `delta = alpha/rank × up@down` 直接 add 到模块权重（64 层 Linear，scale 0.6 生效）
 - **预防**：diffusers LoRA 加载崩/0 权重时，先验证转换链（kohya→lora_linear_layer→peft 的 key 前后缀），不行就手动注入——LoRA 数学就是 delta=alpha/rank×up@down，不依赖库实现
+
+## [下载] hf-mirror.com 长下载中途断连（httpx.RemoteProtocolError）→ 重跑同命令续传
+- **日期**：2026-09-20 · **模块**：inference/nanojev（von-1.0 下载）
+- **症状**：`snapshot_download` 下了 ~980MB/1.58GB 后抛 `httpx.RemoteProtocolError: peer closed connection without sending complete message body`，进程退出
+- **根因**：镜像端主动断连（大文件长连接不稳）；文件已落 `.incomplete`，但 huggingface_hub 不会自动重试整个 snapshot
+- **修复**：重跑同一条 `download_von.py` —— huggingface_hub 自动从断点续传（省掉已下部分，2.9 分钟完成剩余）
+- **预防**：镜像长下载一律后台 + 日志运行；失败先重跑续传，不要删除 `.cache/huggingface/download/*.incomplete`
+
+## [精度] P40 的 is_bf16_supported() 返回 True 是"模拟"语义，实际比 fp32 慢 1.5x
+- **日期**：2026-09-20 · **模块**：inference/nanojev（NanoJev torch 2.7.1+cu118）
+- **症状**：torch 2.7 报 P40 支持 bf16，NanoJev 服务/基准默认走 bf16 autocast；实测单次 4 题决策 200.5ms（bf16）vs 136.7ms（fp32），且 maze 数字与官方记录差 1 次碰撞
+- **根因**：新版 torch 的 `is_bf16_supported()` 默认包含 emulation 检测，Pascal 卡返回 True；bf16 算子实际走慢速模拟路径，P40 无原生 BF16/Tensor Core
+- **修复**：服务与基准默认 `--precision fp32`；bf16 仅保留为对照档
+- **预防**：老卡上 dtype 默认值必须实测（固定输入各跑 20 次取 p50），不能依赖 `is_bf16_supported()`

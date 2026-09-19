@@ -219,3 +219,10 @@ inference/i2v/lora/output/
 *.mp4
 *.webp
 !inference/triposg/assets/**/*.png
+
+# NanoJev/Von 部署（上游克隆、venv、权重、运行输出不入库；结果表 summary 入库）
+inference/nanojev/NanoJev/
+inference/nanojev/von/
+inference/nanojev/logs/
+inference/nanojev/runs/*.json
+!inference/nanojev/runs/benchmark_summary.json

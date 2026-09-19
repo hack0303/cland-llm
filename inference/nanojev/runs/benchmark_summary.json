@@ -1,0 +1,199 @@
+{
+  "generated_by": "collect_results.py",
+  "maze_50x50": {
+    "nanojev_fp32": {
+      "elapsed_seconds": 27.5,
+      "goal_completed": 1,
+      "attempts": 244,
+      "collisions": 36,
+      "successful_moves": 208,
+      "predict_calls": 199,
+      "atomic_questions": 796,
+      "atomic_accuracy": 0.8593,
+      "atomic_brier": 0.1072,
+      "episode_ids": [
+        "maze:ood:50:24310922"
+      ]
+    },
+    "nanojev_bf16": {
+      "elapsed_seconds": 42.5,
+      "goal_completed": 1,
+      "attempts": 243,
+      "collisions": 35,
+      "successful_moves": 208,
+      "predict_calls": 199,
+      "atomic_questions": 796,
+      "atomic_accuracy": 0.8606,
+      "atomic_brier": 0.1073,
+      "episode_ids": [
+        "maze:ood:50:24310922"
+      ]
+    },
+    "qwen_fp32": {
+      "elapsed_seconds": 167.2,
+      "goal_completed": 1,
+      "attempts": 4134,
+      "collisions": 1768,
+      "successful_moves": 2366,
+      "predict_calls": 1137,
+      "atomic_questions": 4548,
+      "atomic_accuracy": 0.4334,
+      "atomic_brier": 0.2983,
+      "episode_ids": [
+        "maze:ood:50:24310922"
+      ]
+    },
+    "qwen_bf16": {
+      "elapsed_seconds": 266.3,
+      "goal_completed": 1,
+      "attempts": 4265,
+      "collisions": 1843,
+      "successful_moves": 2422,
+      "predict_calls": 1212,
+      "atomic_questions": 4848,
+      "atomic_accuracy": 0.4474,
+      "atomic_brier": 0.2952,
+      "episode_ids": [
+        "maze:ood:50:24310922"
+      ]
+    }
+  },
+  "snake_cohort8": {
+    "nanojev_fp32": {
+      "elapsed_seconds": 40.0,
+      "episodes": 8,
+      "outcomes": {
+        "trapped": 4,
+        "horizon_survived": 4
+      },
+      "survival_steps": 1430,
+      "food_collected": 168,
+      "mean_food_score": 21.0,
+      "model_decisions": 449,
+      "predict_calls": 283,
+      "showcase_case": {
+        "id": "snake:showcase:12:61005",
+        "outcome": "horizon_survived",
+        "food_score": 27,
+        "survival_steps": 256
+      }
+    },
+    "nanojev_bf16": {
+      "elapsed_seconds": 58.6,
+      "episodes": 8,
+      "outcomes": {
+        "trapped": 4,
+        "horizon_survived": 4
+      },
+      "survival_steps": 1430,
+      "food_collected": 168,
+      "mean_food_score": 21.0,
+      "model_decisions": 448,
+      "predict_calls": 282,
+      "showcase_case": {
+        "id": "snake:showcase:12:61005",
+        "outcome": "horizon_survived",
+        "food_score": 27,
+        "survival_steps": 256
+      }
+    },
+    "qwen_fp32": {
+      "elapsed_seconds": 34.2,
+      "episodes": 8,
+      "outcomes": {
+        "trapped": 5,
+        "horizon_survived": 3
+      },
+      "survival_steps": 1547,
+      "food_collected": 190,
+      "mean_food_score": 23.75,
+      "model_decisions": 613,
+      "predict_calls": 378,
+      "showcase_case": {
+        "id": "snake:showcase:12:61005",
+        "outcome": "trapped",
+        "food_score": 25,
+        "survival_steps": 211
+      }
+    }
+  },
+  "service_inproc": {
+    "nanojev_fp32": {
+      "load_seconds": 46.2,
+      "parameter_count": 596250498,
+      "memory_after_load_gb": {
+        "allocated": 2.394,
+        "reserved": 2.47
+      },
+      "memory_peak_gb": {
+        "max_allocated": 2.549,
+        "max_reserved": 2.73
+      },
+      "benchmarks": {
+        "single_maze_4q": {
+          "median_ms": 136.7,
+          "p95_ms": 137.6,
+          "questions_per_s": 29.3
+        },
+        "batch_maze_4states_16q": {
+          "median_ms": 452.8,
+          "p95_ms": 467.1,
+          "questions_per_s": 35.3
+        },
+        "mixed_3q": {
+          "median_ms": 82.4,
+          "p95_ms": 88.2,
+          "questions_per_s": 36.4
+        }
+      }
+    },
+    "nanojev_bf16": {
+      "load_seconds": 32.5,
+      "parameter_count": 596250498,
+      "memory_after_load_gb": {
+        "allocated": 2.394,
+        "reserved": 3.435
+      },
+      "memory_peak_gb": {
+        "max_allocated": 3.598,
+        "max_reserved": 3.739
+      },
+      "benchmarks": {
+        "single_maze_4q": {
+          "median_ms": 200.5,
+          "p95_ms": 201.3,
+          "questions_per_s": 20.0
+        },
+        "batch_maze_4states_16q": {
+          "median_ms": 651.6,
+          "p95_ms": 656.0,
+          "questions_per_s": 24.6
+        },
+        "mixed_3q": {
+          "median_ms": 118.3,
+          "p95_ms": 119.9,
+          "questions_per_s": 25.4
+        }
+      }
+    }
+  },
+  "service_http": {
+    "nanojev_fp32": {
+      "median_ms": 134.4,
+      "p95_ms": 136.7,
+      "requests_per_s": 7.44
+    }
+  },
+  "von_http": {
+    "cuda_bf16": {
+      "single_noul": {
+        "median_ms": 61.1,
+        "min_ms": 45.2
+      },
+      "fanout_3q": {
+        "median_ms": 150.2,
+        "min_ms": 149.4
+      }
+    }
+  }
+}

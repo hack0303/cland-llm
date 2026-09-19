@@ -25,6 +25,8 @@ bash scripts/start_services.sh --with-asr # 额外启动语音识别（10334）
 | 10334 | 语音识别 | SenseVoice 234M | audio_env | 1 | `POST /recognize` 音频→文本（**默认停**） |
 | 10336 | 音效生成 | AudioGen 1.5B | audio_env | 1 | `POST /generate` 提示词→WAV |
 | 10337 | 图生视频 | AnimateDiff（SD1.5+mm_sd_v15） | base | 1 | ComfyUI API + `inference/i2v/generate.py` 图片→MP4 |
+| 10338 | 决策模型（System One 复现） | NanoJev 0.6B（Qwen3 底座+决策头） | nanojev venv | 0 | 手动 `inference/nanojev/start_server.sh`，`POST /api/evaluate`（见 `docs/systemone/README.md`） |
+| 10339 | 决策模型（TypeSafe 协议对等） | Von-1.0（ModernBERT-NLI, T=1.0367） | nanojev venv | 0 | 手动 `inference/nanojev/start_von.sh`，`POST /v1/systemone` |
 
 ### 3. 调用速查
 
@@ -44,6 +46,14 @@ curl -X POST http://127.0.0.1:10333/generate -F "text=你好世界" -F "gender=f
 
 # 语音识别（返回文本+情感标签）
 curl -X POST http://127.0.0.1:10334/recognize -F "audio=@voice.wav"
+
+# 决策模型：NanoJev 多题分布（boolean/choice/score，零输出解码）
+curl -X POST http://127.0.0.1:10338/api/evaluate -H "Content-Type: application/json" \
+  -d '{"states":[{"id":"s1","state":"Someone is home.","questions":{"occupied":{"type":"boolean","instructions":"Someone is home."}}}]}'
+
+# 决策模型：Von（TypeSafe /v1/systemone 对等）
+curl -X POST http://127.0.0.1:10339/v1/systemone -H "Content-Type: application/json" \
+  -d '{"model":"von-1.0.0","state":{"error":"Disk at 98%"},"questions":{"urgent":{"type":"noul","instructions":"Does this require intervention?"}}}'
 ```
 
 ### 4. 联动管线（图 → 3D → 语音）

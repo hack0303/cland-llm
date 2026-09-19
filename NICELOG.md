@@ -50,3 +50,17 @@
 - **复用**：任何需要外部评审的功能交付照抄「拼图并排 + 客观指标 + README 要点」三件套
 
 > 最后更新：2026-08-26
+
+## 三、模型部署与复现（System One 开源复现）
+
+### 8. 上游依赖新版 API 时的 sitecustomize no-op shim（不改上游源码）
+- **实践**：NanoJev 上游记录 `torch==2.14.0`，评估脚本 `from torch._native import triton_utils; deregister_op_overrides()`；P40 只能用 torch 2.7.1（无该模块）。写 `sitecustomize.py` 在 import 期检测缺失后注册 no-op stub（torch 2.7 本就没有需要关闭的 native Triton overrides），经 `PYTHONPATH` 自动生效，上游源码 0 行改动
+- **价值**：上游 release 的脚本 sha256 校验值保持原样（复现证据可信）；一处 shim 同时修复 maze/snake/native-qwen 三组脚本；未来 torch 自带该模块时 shim 自动让位
+- **落地**：`inference/nanojev/sitecustomize.py` + `start_server.sh` / `run_bench_*.sh` 的 PYTHONPATH 导出
+- **复用**：凡「上游代码调用新版框架 API、本机只能用旧版」的场景，优先 shim 而非改源码；no-op 前提是该 API 在旧版语义上无需动作
+
+### 9. P40 部署决策：默认 fp32，bf16 仅作对照（实测 1.5x 差异）
+- **实践**：torch 2.7 的 `torch.cuda.is_bf16_supported()` 在 P40（sm_61）返回 True（模拟路径），服务默认选 bf16；实测 fp32 单次 4 题决策 136.7ms vs bf16 200.5ms，且 fp32 的 50×50 maze 结果与官方 A100-bf16 记录完全一致（244/36）
+- **价值**：避免"API 说支持就默认 bf16"的隐性 1.5× 性能损失；同精度口径还让复现数字对齐
+- **落地**：`inference/nanojev/start_server.sh` 默认 `--precision fp32`；`docs/systemone/README.md`
+- **复用**：Pascal 及更老卡上先跑 dtype 对照再定默认值；`is_bf16_supported()` 只作参考，不作决策依据

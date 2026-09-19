@@ -4,6 +4,22 @@ description: record your changes
 
 # Changelog
 
+## 20260920
+
+### Changes
+
+- 推理/决策模型：新增 `inference/nanojev/`——开源 System One 复现本地部署（NanoJev 10338 / Von 10339）：独立 venv（复用 base torch 2.7.1+cu118）+ `sitecustomize.py`（torch 2.7 的 `torch._native.triton_utils` no-op shim）+ 下载/启动/基准脚本；文档 `inference/nanojev/README.md` 与 `docs/systemone/README.md`
+- 基准复现/50×50 maze：NanoJev fp32 **244 attempts / 36 collisions / goal**（与官方 A100-bf16 记录逐项一致），27.5s / 199 前向；未调 Qwen3-0.6B fp32 4134/1768/goal（167.2s），atomic accuracy 43.3% vs NanoJev 85.9%
+- 基准复现/Snake 8 局 cohort：NanoJev ——4 trapped/4 survived、总 food 168、mean 21.0，**逐 case 与官方 8/8 一致**（showcase 12:61005 = 27 food/256 步存活）；未调 Qwen3-0.6B ——5 trapped/3 survived、mean 23.75，同样 8/8 一致（showcase 25 food/211 步 trapped）
+- 服务性能（P40 实测）：NanoJev fp32 加载 46.2s、显存 2.39GB（峰值 2.55GB）、单 state 4 题 136.7ms p50（HTTP 134.4ms / 7.44 req/s）；Von 单 noul 61ms、3 题 fan-out 150ms、显存 ~1GB
+- 模型/权重：下载 NanoJev（local_atomic/games_gold 2.39GB×2）、Von-1.0（1.58GB）、Qwen3-0.6B 基线（固定 revision）、NanoJev-Data games_v4/arcade 小包（官方 cohort+回放）
+
+### Fixes
+
+- 修复：上游评估脚本在 torch 2.7 报 `ModuleNotFoundError: torch._native`（上游记录 torch 2.14）→ `sitecustomize.py` 提供 no-op 等价 shim，不改上游源码
+- 修复：hf-mirror 长下载断连（`httpx.RemoteProtocolError`，von-1.0 到 980MB/1.58GB）→ 重跑同命令续传完成
+- 优化：P40 上 `is_bf16_supported()`=True 为模拟语义（bf16 实测比 fp32 慢 ~1.5×）→ 服务与基准默认 `--precision fp32`
+
 ## 20260906
 
 ### Changes
