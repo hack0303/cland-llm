@@ -4,6 +4,24 @@ description: record your changes
 
 # Changelog
 
+## 20261001
+
+### Changes
+
+- 推理/修图（#179 H-01 v0）：新增 `inference/photo/` AI 修图产线——① Pillow 预处理（EXIF/自动裁剪/色阶/白点）→ ② RealESRGAN 4x 分块超分（复用 hand_pipe/rrdbnet，256 tile+羽化，输入封顶 1280/输出截断 2048）→ ③ SDXL img2img 模式化处理（repair .25 / colorize .80 / product .25，进程内 fp16 加载无服务依赖）→ ④ before/after 对比图 + meta.json；`--mode/--strength/--seed/--batch` 全参数支持，manifest 混合模式批量
+- 推理/修图/上色保结构：colorize 采用 **LAB 色度迁移**（L 用修复后原图、a/b 用 AI 上色）+ 场景/油画描述提示词 + 黑白负面词，灰度上色色彩度 0→19.5（真实老照片）/ 18.7→57.7（油画对拍，GT 48.1）
+- 评估/质检：新增 `evaluate.py`——对拍集 PSNR/SSIM（native + 1024 统一口径）+ 无参指标（Laplacian 清晰度/中值残差噪声/色彩度）+ 5 维代理评分 + Owner 总览拼图（owner_overview.png）
+- 素材（仅 PD/CC0）：`tools/fetch_assets.py` 抓 Met Open Access CC0（3 对拍 GT + 3 商品图）+ Wikimedia PD（2 历史老照片），许可/sha256 入 manifest；`degrade.py` 合成退化对拍集（噪声/模糊/划痕/灰度/sepia/降采样/JPEG/暗角，seed 42-44）
+- v0 实测：**11/11 成功（失败率 0%）**，总 654.4s；单张基线 upscale 11-13s · product 26-34s · repair 42-59s · colorize 129-132s（+模型冷启 ~6min/热启 56-90s）；同 seed 跨 run 输出 sha256 逐字节一致；目录模式 5 张一条命令复跑 5/5
+- workflow：alice-workflow-hub 新增 `photo.retouch`（manual，两步 shell：retouch → evaluate；已过 workflow_spec 校验）+ 登记文档；报告 `docs/photo-retouch-v0.md`
+
+### Fixes
+
+- 修复：colorize 上色近灰度（strength 0.42-0.75 下模型保持灰度）→ 强度 0.80 + 场景/油画描述提示词 + 负面词补 black and white/gray/monochrome + LAB 色度迁移
+- 修复：manifest 的 per-case prompt/negative/seed 未透传到扩散步骤（build meta 时丢字段）→ 补齐并参与分组去重
+- 修复：ESRGAN 大图 x4 输出数组内存（1920×2496 → 7680×9984，~1.2GB）→ `--esrgan-in-cap 1280` 输入封顶 + 分块羽化
+- 修复：素材抓取 urllib 弱网断连（IncompleteRead）→ 改 curl --fail 重试 4 次 + 幂等跳过已下载
+
 ## 20260920
 
 ### Changes

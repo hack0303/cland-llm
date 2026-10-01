@@ -277,3 +277,19 @@
 - **根因**：von 后端自动 dtype：`device.type=="cuda"` 且 `is_bf16_supported()` → bf16；P40 无原生 BF16，torch 2.7 的 emulation 检测让其返回 True，实际走慢速模拟且低位精度损失；noul 是两路 entailment logits 的 softmax，logits 接近时精度损失直接翻转 0.5 边界结论
 - **修复**：`patches/von-p40-fp32.patch` 增加 `VON_DTYPE` 显式覆盖（改动 10 行内）；`start_von.sh` 默认 `VON_DTYPE=fp32`；CUDA 全套测试 23 passed，服务端 noul=0.5092
 - **预防**：凡「两路 softmax / 阈值门控 / 归一化」型模型服务，dtype 必须用真实用例对照（CPU vs CUDA、fp32 vs bf16），不能信任 `is_bf16_supported()`；上游测试套件是最好的探针
+
+## [SDXL] 裸调 fp16 VAE encode→decode 全 NaN/灰度（pipeline 会自动 upcast，诊断脚本别裸调）
+
+- **日期**：2026-10-01 · **模块**：inference/photo（上色效果诊断）
+- **症状**：写诊断脚本直接 `vae.encode(图) → vae.decode(lat)`（AutoencoderKL，fp16）验证 VAE 是否正常，彩色图回读色彩度 cf=**0.0**（全灰），一度误判"VAE 坏了/上色失败是 VAE 的锅"
+- **根因**：SDXL VAE 在 fp16 下激活值溢出产生 **100% NaN**（P40 无 Tensor Core 亦无例外；SDXL VAE 有专门的 fp16-fix 权重就是因为此问题）。而 diffusers 的 SDXL pipeline 内部检测 `vae.config.force_upcast` 会自动把 VAE 临时 upcast 到 fp32 再 encode/decode——所以真实出图正常，只有裸调 VAE 才复现
+- **修复**：诊断脚本改成 fp32 VAE（`vae.to(torch.float32)`）后正常；另一个坑点：裸调必须按 pipeline 方式除 `vae.config.scaling_factor`（0.13025），否则解码输入尺度错误
+- **预防**：验证 VAE 别裸调 fp16 —— 先用 pipeline 跑一张彩图看输出是否正常；必须裸调时用 fp32 + 记得 scaling_factor
+
+## [SDXL] colorize 模式输出近灰度：历史照片提示词 + 低强度把"上色"变成"去色"
+
+- **日期**：2026-10-01 · **模块**：inference/photo/retouch.py
+- **症状**：灰度老照片走 colorize（strength 0.42-0.75，提示词 natural colorized historical photograph）输出仍近灰度（cf 1-11）；sepia 输入甚至被去色（cf 18.7→1.1），像被"洗成黑白"
+- **根因**：SDXL base 非专用上色模型：**低强度时初始化灰度主导**（luminance 锚定），"historical photograph" 语义又倾向保留"老照片感"（黑白/sepia）；画面主体偏灰时模型保守不上色。提高强度+描述词后才生成色彩（0.8×80 步 cf 19.5-57.7）
+- **修复**：① colorize 强度提到 0.80、guidance 7.0；② 提示词改**场景/材质描述**（如 "a bearded man in a dark suit, pale skin tones"、油画用 "restored vintage oil painting with vivid colors"）；③ 负面词显式加 `black and white, grayscale, monochrome, sepia`；④ 收尾做 LAB 色度迁移（亮度用修复后原图）保证结构不漂
+- **预防**：img2img"改属性"任务（上色/换季/换天）强度必须过阈值（≥0.75）才生效；通用提示词无效时先试"描述目标状态"而非"描述操作"

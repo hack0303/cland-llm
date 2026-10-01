@@ -70,3 +70,17 @@
 - **价值**：无需自造验收集，上游测试即「协议对等 + 最小质量门禁」；阈值型断言是可复现的 dtype 问题探针（对照 CPU/CUDA 一次定位）
 - **落地**：`inference/nanojev/patches/von-p40-fp32.patch` + `start_von.sh` 默认 `VON_DTYPE=fp32`；结果记录在 `inference/nanojev/README.md` §5.6 与 `docs/systemone/README.md`
 - **复用**：部署任何开源模型服务，先跑上游测试套件再自评；对「两路 softmax/阈值」模型固定用 fp32 并保留一组 dtype 对照
+
+## 四、AI 修图产线（#179）
+
+### 11. 灰度老照片上色：大强度重绘取色 + LAB 色度迁移保结构
+- **实践**：colorize 模式让 SDXL img2img 以 strength 0.8 重绘生成色彩（提示词用场景/油画描述 + 负面词压 black and white/gray/monochrome），随后 `chroma_transfer`：最终图 = 修复后原图的 L 通道 + AI 输出的 a/b 色度（cv2 LAB）
+- **价值**：解决两个矛盾目标——低强度上色无效（cf 1-11，模型保持灰度）、高强上色才出色（cf 19.5-57.7）；色度迁移后脸部/构图零漂移（亮度完全沿用原图），上色再激进也不毁图
+- **落地**：`inference/photo/retouch.py`（chroma_transfer）；实测 hist01 cf 0→19.5、油画对拍 18.7→57.7（GT 48.1），PP 参见 `docs/photo-retouch-v0.md` §6
+- **复用**：任何"给灰度/单色内容加色彩"的场景（老照片/线稿/地图）通用——结构通道与色彩通道解耦，AI 只负责猜色
+
+### 12. 无视觉模型时的修图验收：合成退化对拍集 + 无参指标 + 代理评分 + 总览拼图
+- **实践**：高清 CC0 GT → `degrade.py` 合成"老照片"输入（噪声/模糊/划痕/灰度/降采样/JPEG）→ 批量修复 → 对拍集算 PSNR/SSIM（native + 统一 1024 口径），全量算无参指标（Laplacian 清晰度/中值残差噪声/色彩度）+ 分档代理评分，最后拼 11 案例 Owner 总览图
+- **价值**：本地无 VLM 也能给出可复现的质量底线与方案对比（如 AI 修复 vs 纯超分基线的保真差异：SSIM 0.40 vs 0.52）；"合成退化"让无 GT 的老照片场景也有了可算指标的主体，评审人只需看图
+- **落地**：`inference/photo/{degrade.py,evaluate.py}`；报告 `docs/photo-retouch-v0.md` §5/§6；产物 `outputs/photo-retouch/{metrics.json,owner_overview.png}`
+- **复用**：任何图像生成/修复任务，先造"退化-复原对"再上指标；无参指标用于没有 GT 的样例，代理评分只做趋势不做定论（须标注"待人工校准"）
