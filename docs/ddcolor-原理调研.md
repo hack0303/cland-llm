@@ -213,7 +213,7 @@ Owner：「DDColor 有专门的**模型技术文档**吗，**原理文档**、**
 | `ddcolor_paper_tiny` | HF `piddnad/ddcolor_paper_tiny` | ImageNet | 最轻量（ConvNeXt-T，55M） |
 
 - **代码许可 Apache-2.0**（仓库 `LICENSE`）；**权重许可 Apache-2.0**（HF 模型卡 `license: apache-2.0`，经 hf-mirror 核实）。
-- 落盘（本项目）：`/mnt/data/ai_workspace/models/ddcolor/ddcolor_modelscope.pt`，**sha256 `17c460d7e55b32a598370621d77173be59e03c24b0823f06821db23a50c263ce`，911,950,059 字节（~912MB）fp32**。
+- 落盘（本项目）：`/mnt/data/ai_workspace/models/ddcolor/ddcolor_modelscope.pt`，**sha256 `17c460d7e55b32a598370621d77173be59e03c24b0823f06821db23a50c263ce`，911,950,059 字节（~912MB）fp32**；已登记 OpenCMDB 模型资产 **`ast-1790952748239`**（sage，模板 `tmpl-1790952684373` AI Model），许可已在 `cland-llm/docs/models.md` 校正为 **Apache-2.0**（commit `0f79cf8`）。
 - 仓库（本项目）：`/mnt/data/ai_workspace/DDColor`（= 官方 `piddnad/DDColor`，本机快照 commit `2adb63f`）。
 
 ### 5.2 场景失效边界
