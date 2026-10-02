@@ -8,6 +8,7 @@ description: record your changes
 
 ### Changes
 
+- 调研/上色（#226）：按 curie 评测（Track A/B）采纳**口径修正**（turing 出补丁、curie 代提交 · CI-033 单写者）——`docs/ddcolor-原理调研.md` §1/§4.3/§5.3/§9：①「全面优于 DeOldify/SDXL」→**分口径**（Track B 空间伪影/结构保真显著优；Track A 单图色度还原不占优）；②**§5.3 修正**：D2 的 `L_shift` 4× 提升**仅 #225 单素材成立，Track B n=8 中位 0.109→0.139 未复现 → 降级为待验证**；D2 vs SDXL-0.80 仍显著；③§4.3 补 Track B n=8 表 + 显著性；④§9 局限互引评测文档
 - 评测/上色（#226，curie）：新增 `docs/ddcolor-评测-指标口径与基线对比.md` + 评测脚本 `inference/photo/tools/bench_colorize.py`（Track A 有 GT 参考基准 / Track B 无参考真实老照片 · 逐指标口径 + 配对显著性）。实测：**Track B（n=8）DDColor(D2) 相对 SDXL-0.80 显著更少蓝青伪影**（`skin_blue%` 0.25 vs 13.77，Wilcoxon p=0.023、Cliff δ=−0.84）、**亮度保真更好**（`L_shift` 0.139 vs 0.377，p=0.008）；**Track A（n=6）DDColor 参考色差反而劣于 SDXL-0.45**（`ΔE00` 14.17 vs 8.86）→ 修正结论口径：DDColor 优在「分布自然度 + 空间伪影 + 结构保真」，非单图色度还原。DeOldify 因权重源不可达未本机实测（待验证）
 - 调研/上色（#226）：新增 `docs/ddcolor-原理调研.md`——DDColor 原理/技术文档（架构 Dual Decoder + Color Query · 训练/数据/损失/分辨率 · vs DeOldify/SDXL img2img 对比 · 落地边界与 D2 保 work 亮度机制 · 最小复现与指标口径），含论文（ICCV 2023 / arXiv 2212.11613）+ 官方源码（commit `2adb63f`）+ 本机 P40 复现（256→0.10s/1150MiB、512→0.20s/1769MiB、参数量 227.9M）+ #225 实测三源交叉；新增最小复现脚本 `inference/photo/tools/repro_ddcolor_min.py`
 - 上色引擎（#225 落地）：`retouch.py` colorize 新增 `--colorizer ddcolor`——**DDColor-L 出色 + `chroma_transfer` 保 work 亮度**（消除 SDXL strength=0.80 的手臂/衣物蓝块串色；出色 ~0.3s/张，权重 `models/ddcolor/ddcolor_modelscope.pt`、仓库 `DDColor/`，可用 `DDCOLOR_REPO/DDCOLOR_CKPT` 覆盖）；默认仍 `--colorizer sdxl`
