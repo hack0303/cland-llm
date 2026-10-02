@@ -120,6 +120,45 @@ def white_point(im: Image.Image, border: float = 0.05) -> Image.Image:
     return Image.fromarray(np.clip(arr * scale, 0, 255).astype(np.uint8))
 
 
+def remove_damage(im: Image.Image, k: int = 9, thresh: int = 32,
+                  max_comp_frac: float = 0.0015, dilate: int = 2) -> tuple[Image.Image, dict]:
+    """老旧照片微小损伤去除（去划痕/去霉点/去白斑）——真实产线预处理步骤。
+
+    思路：top-hat / black-hat 形态学检测**细小的亮/暗结构**（划痕、白斑、霉点），
+    按连通域面积与长宽比过滤掉“内容”（人脸、线条等大面积或团块结构，避免涂抹失真），
+    只对“薄小/细长”损伤做 Telea inpaint；随后仍走 SDXL 低强度修复以自然融合。
+    返回 (处理图, 统计)。"""
+    import cv2
+    arr = np.asarray(im.convert("RGB"))
+    g = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    kk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    top = cv2.morphologyEx(g, cv2.MORPH_TOPHAT, kk)
+    bh = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, kk)
+    m = (((top > thresh) | (bh > thresh)).astype(np.uint8)) * 255
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(m, 8)
+    h, w = m.shape
+    lim = max(4, max_comp_frac * h * w)
+    keep = np.zeros_like(m)
+    n_big = n_thin = 0
+    for i in range(1, n):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        cw, ch = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
+        aspect = max(cw, ch) / max(1, min(cw, ch))
+        if area <= lim:
+            keep[lab == i] = 255
+            n_big += 1
+        elif aspect >= 4 and area <= lim * 10:   # 细长划痕（可能被连成一条）
+            keep[lab == i] = 255
+            n_thin += 1
+    keep = cv2.dilate(keep, np.ones((dilate, dilate), np.uint8), 1)
+    if int(keep.sum()) == 0:
+        return im, {"damage_fix": True, "damage_mask_pct": 0.0, "specks": 0, "scratches": 0}
+    fixed = cv2.inpaint(arr, keep, 3, cv2.INPAINT_TELEA)
+    return Image.fromarray(fixed), {"damage_fix": True,
+                                   "damage_mask_pct": round(float((keep > 0).mean() * 100), 3),
+                                   "specks": n_big, "scratches": n_thin}
+
+
 def chroma_transfer(color_img: Image.Image, base_img: Image.Image, strength: float = 1.0) -> Image.Image:
     """LAB 色度迁移：把 color_img 的色度（a/b）搬到 base_img 的亮度（L）上。
     上色场景保结构：亮度/层次完全沿用修复后的原图，只采纳 AI 猜测的颜色。"""
@@ -289,8 +328,9 @@ def clean_white_bg(im: Image.Image, thresh: int = 240) -> Image.Image:
     return Image.fromarray(out)
 
 
-def preprocess(im: Image.Image, mode: str) -> tuple[Image.Image, dict]:
+def preprocess(im: Image.Image, mode: str, damage_fix: bool = False) -> tuple[Image.Image, dict]:
     steps: list[str] = []
+    info: dict = {}
     im, crop_info = auto_crop(im)
     if crop_info.get("cropped"):
         steps.append("auto_crop")
@@ -300,7 +340,11 @@ def preprocess(im: Image.Image, mode: str) -> tuple[Image.Image, dict]:
     elif mode == "product":
         im = white_point(im)
         steps.append("white_point")
-    return im, {"preprocess_steps": steps, **crop_info}
+    if mode == "repair" and damage_fix:
+        im, dinfo = remove_damage(im)
+        steps.append("remove_damage")
+        info.update(dinfo)
+    return im, {"preprocess_steps": steps, **info, **crop_info}
 
 
 def fit_for_work(im: Image.Image, work_res: int) -> Image.Image:
@@ -411,6 +455,7 @@ def load_cases(args) -> list[dict]:
                 "prompt": c.get("prompt"),
                 "negative": c.get("negative"),
                 "skin_fix": c.get("skin_fix"),
+                "damage_fix": c.get("damage_fix", args.damage_fix),
                 "case_seed": c.get("seed", args.seed),
             })
         return cases
@@ -422,7 +467,7 @@ def load_cases(args) -> list[dict]:
     return [{"name": p.stem, "input": str(p), "mode": args.mode,
              "strength": args.strength, "steps": args.steps, "guidance": args.guidance,
              "gt": None, "note": "", "prompt": None, "negative": None,
-             "skin_fix": None, "case_seed": args.seed} for p in files]
+             "skin_fix": None, "damage_fix": args.damage_fix, "case_seed": args.seed} for p in files]
 
 
 def main():
@@ -440,6 +485,8 @@ def main():
     ap.add_argument("--guidance", type=float, default=None, help="CFG（默认按 mode：colorize 7.0 其余 4.5）")
     ap.add_argument("--skin-fix", action="store_true",
                     help="colorize 后处理启用脸/手臂肤色色偏修复（默认关；也可在 manifest 逐案例 skin_fix）")
+    ap.add_argument("--damage-fix", action="store_true",
+                    help="repair 预处理启用去划痕/去白斑/去霉点（形态学检测 + inpaint；也可在 manifest 逐案例 damage_fix）")
     ap.add_argument("--esrgan", default="realesrgan", choices=["realesrgan", "ultrasharp"])
     ap.add_argument("--esrgan-in-cap", type=int, default=1280,
                     help="ESRGAN 输入长边上限（x4 输出数组内存保护，默认 1280）")
@@ -470,13 +517,13 @@ def main():
              "gt": c.get("gt"), "note": c.get("note", ""), "strength": c["strength"],
              "steps": c["steps"], "guidance": c["guidance"],
              "prompt": c.get("prompt"), "negative": c.get("negative"),
-             "skin_fix": c.get("skin_fix"),
+             "skin_fix": c.get("skin_fix"), "damage_fix": c.get("damage_fix", False),
              "seed": c["case_seed"], "status": "pending", "timings": {}, "sizes": {}, "outputs": {}}
         t0 = time.time()
         try:
             orig = load_rgb(c["input"])
             m["sizes"]["before"] = list(orig.size)
-            im, pre_info = preprocess(orig, c["mode"])
+            im, pre_info = preprocess(orig, c["mode"], damage_fix=bool(c.get("damage_fix")))
             m.update(pre_info)
             t_pre = time.time() - t0
 
