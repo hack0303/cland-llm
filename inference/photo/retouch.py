@@ -15,12 +15,13 @@
 
 参数：
     --mode repair|upscale|colorize|product   （manifest 模式下为默认值）
-    --strength   img2img 去噪强度（<=0.6；未给则用 mode 预设：repair .25 / colorize .45 / product .35）
+    --strength   img2img 去噪强度（<=0.9；未给则用 mode 预设：repair .25 / colorize .80 / product .35）
+                 ⚠️ #225 实测 colorize .80 易致手臂/衣物蓝块串色，建议 .35–.45（见 docs/photo-colorize-offset-225.md）
     --seed       随机种子（复现用）
     --batch      同一模式下每次送 SDXL 的图片数（显存受限，默认 1）
     --work-res   SDXL 工作分辨率长边（默认 1024，P40 甜点）
     --max-side   ESRGAN 输出长边上限（默认 2048）
-    --steps      SDXL 总步数（实际步数 = int(steps*strength)，默认 30）
+    --steps      SDXL 总步数（实际步数 = int(steps*strength)，默认 80）
 """
 from __future__ import annotations
 

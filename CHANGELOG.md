@@ -8,6 +8,9 @@ description: record your changes
 
 ### Changes
 
+- 修图/上色调研（#225）：老照片上色「颜色覆盖位置偏移」四路验证——新增 `docs/photo-colorize-offset-225.md`（A SDXL调参 / B 色度层配准 / C 掩膜约束 / D DDColor 专用模型 · 同素材对拍 + 对比表 + 推荐）与实验脚本 `inference/photo/tools/cmp_colorize_offset.py`（A/B/C）、`inference/photo/tools/run_ddcolor.py`（D）。**结论：D(DDColor)最优**（皮肤蓝晕 4.5%→0、色度最足、结构对齐最好）；SDXL 兜底 strength 0.80→0.45 可清蓝块（色彩变淡）。修正 `retouch.py` docstring 与预设长期不一致（原写「≤0.6 / colorize .45 / steps 30」，实际 .80 / steps 80）
+- 修图（#224 后置项）：repair 模式新增去划痕/去白斑/去霉点（`remove_damage()` + `--damage-fix`），形态学 top-hat/black-hat 检测 + Telea inpaint
+
 - 修图/上架物料（#224 A 类）：新增 `inference/photo/marketing.py`——以**真实产线** `photo.retouch` 的 before/after 为素材，Pillow 生成渠道上架效果图（全部 1200×1200 · 1:1）：A1 首图主图 ×1 · A2 前后对比图 ×5 · A3 服务四选图 · A4 流程时效图 · A5 合规隐私图 · A6 价格套餐图；交付目录 `marketing/ai-photo-上架物料-v1/`（含 `README.md` 索引 + `manifest.json` 溯源）
 - 素材合规：仅用 PD/CC0（Dorothea Lange 1936 / Lincoln 1863 / Bruegel《The Harvesters》/ 葛饰北斋《神奈川冲浪里》），图内标注「公有领域素材演示」；**去技术化**（无模型/管线/内部路径/工单/人名）；价格严格引《定价战术 v0》（¥19/49/129；新客 ¥9.9 限 1 张；电商主图 ¥59/张 · 5 张 ¥199）
 - 推理/修图（#179 收尾）：colorize 新增**脸/手臂肤色色偏修复**——`build_skin_mask()` 用 DWPose（已有人脸 68 点+双手+肘腕关键点，CPU onnxruntime）生成脸/手/前臂/颈软掩膜（眼部挖洞+羽化）；`fix_skin_color_cast()` 在 LAB 内把掩膜内色相异常像素（天然肤色窗口 22°–72° 之外，如蓝色手部）拉回暖肤色 43°、饱和度夹取 5–10，亮度纹理不动；逐案例开关 `skin_fix`（CLI `--skin-fix` / manifest 字段），并输出 `skin_zoom.png`（修复前/后面部放大证据）
