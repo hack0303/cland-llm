@@ -49,6 +49,7 @@ issue: base/cland-crawler#226
 | **MI 错位指数** | →1 | `ΔE00_raw / ΔE00_shift`，用相位相关在 GT/pred 的 a、b 通道估最优**全局平移**后重算 ΔE00，取 `max(1, ·)` | 颜色层是否**整体平移**（>1=可被全局平移解释） |
 | colorfulness | 参考 | Hasler & Süsstrunk (2003) | 色彩自然度/饱和度代理 |
 | **ΔCF** | ↓ | \|colorfulness(pred) − colorfulness(gt)\| | 生成与 GT **色彩度差**（论文口径，越低越自然） |
+| **L_shift (\|ΔL\|)** | ↓ | `mean(|L_gt − L_pred|)`（Lab L，0–100） | 亮度/结构保真（越低越保结构） |
 
 > **MI 的实测说明**：本批全部变体 MI=1.00（含 DDColor 与 SDXL）→ **不存在全局颜色层平移**；#225 观测到的"颜色覆盖偏移"是**局部/语义级串色**，应由 `BW-ΔE00` 与 Track B `skin_blue%` 量化，而非全局位移。MI 保留为**下游诊断项**（若未来模型出现整体套色偏移会 >1）。
 
@@ -90,20 +91,22 @@ issue: base/cland-crawler#226
 
 中位数（`summary_A.md`）：
 
-| variant | PSNR↑ | SSIM↑ | LPIPS↓ | ΔE00↓ | BW-ΔE00↓ | MI | colorfulness | ΔCF↓ |
-|---|---|---|---|---|---|---|---|---|
-| gray（下界） | 26.00 | 0.969 | 0.153 | **6.97** | 9.77 | 1.0 | 0.0 | 30.45 |
-| ddcolor_native | 20.75 | 0.928 | 0.206 | 14.18 | 14.24 | 1.0 | 44.75 | **10.70** |
-| ddcolor_transfer | 20.73 | 0.925 | 0.206 | 14.17 | 14.23 | 1.0 | **44.75** | **10.70** |
-| sdxl_s045_cfg7 | **25.08** | 0.942 | **0.159** | **8.86** | 13.22 | 1.0 | 15.80 | 11.90 |
-| sdxl_s080_cfg7 | 19.28 | 0.830 | 0.452 | 13.16 | 15.56 | 1.0 | 51.10 | 12.65 |
+| variant | PSNR↑ | SSIM↑ | LPIPS↓ | ΔE00↓ | BW-ΔE00↓ | MI | colorfulness | ΔCF↓ | L_shift↓ |
+|---|---|---|---|---|---|---|---|---|---|
+| gray（下界） | 26.00 | 0.969 | 0.153 | **6.97** | 9.77 | 1.0 | 0.0 | 30.45 | 0.387 |
+| ddcolor_native | 20.75 | 0.928 | 0.206 | 14.18 | 14.24 | 1.0 | 44.75 | **10.70** | 0.472 |
+| ddcolor_transfer | 20.73 | 0.925 | 0.206 | 14.17 | 14.23 | 1.0 | **44.75** | **10.70** | **0.408** |
+| sdxl_s045_cfg7 | **25.08** | 0.942 | **0.159** | **8.86** | 13.22 | 1.0 | 15.80 | 11.90 | 0.405 |
+| sdxl_s080_cfg7 | 19.28 | 0.830 | 0.452 | 13.16 | 15.56 | 1.0 | 51.10 | 12.65 | 0.484 |
+
+> `\|ΔL\|`（L_shift）全部≈**0.4**（Lab L 0–100）：主体是 **RGB→灰度→RGB 的亮度基准差**（灰度直通 `gray` 自己就是 0.387，即本条口径的底噪），各方法偏差很小；SDXL-0.80 最高（0.484）。**说明所有变体都基本保住了输入结构**，不区分方法优劣。
 
 **解读（关键）**：
 - **参考色差赢家是"少改"的方法**：`gray`（不加色）ΔE00 最低，其次 `s045`。这说明 Track A 度量的是**还原具体 GT 色**，而**扩散/生成式上色本就不以还原为目**。
 - **DDColor 参考色差反而不如 SDXL-0.45/0.80**（14.17 vs 8.86/13.16），但**结构最好于 s080**（SSIM 0.925 vs 0.830）、**色彩远足于 s045**（44.8 vs 15.8）——即 **DDColor = 色彩足 + 结构稳，但颜色是"编的"**。这与论文口径互补：论文用 **ΔCF**（色彩度差）而非逐图像素保真，DDColor 的强项是**分布层自然度**，不是单图复原。
 - **统计功效不足**：n=6 不做 Wilcoxon；bootstrap 中位差 CI 多数跨 0（如 ΔE00 DD−s080 CI=[−6.9, +7.6]），故 Track A **不构成对 DDColor 的胜负判定**，只作**方向性证据**。唯一强效应：`s045` 的 colorfulness 显著低于 `s080`（δ=−1.0，CI=[−40.1,−17.0]）。
 - **ΔCF（论文口径）反而 DDColor 最优**：`ΔCF` 中位 **10.70**（SDXL-0.45 11.90 / SDXL-0.80 12.65 / gray 30.45）——即**色彩度最贴近 GT**，与该论文 ΔCF 0.05 的结论方向一致。⚠️ 但 ΔCF 只比「色彩量」，不比「色相对不对」；结合 ΔE00（DDColor 14.17 最差）可见 **DDColor 色彩量自然、但具体颜色是编的**。两个口径必须并列看。
-- **FID 未本地计算**：FID 是**分布**指标，需 ≥ 千张量级的生成/GT 图，本集 n=6（Track B n=8）**样本量不足以给出可信 FID**，报了会误导；故仅引论文 FID（DDColor-L 3.92 vs DeOldify 6.59）。**待扩样**（curie §7）。
+- **FID 未本地计算（实现已就绪 + 采样量门禁）**：FID/KID 是**分布**指标，稳定估计需 **≥10⁴ 样本**（经验下限 ≥100；样本数 ≪ 特征维时协方差奇异）。本集 n=6 → 脚本 `--fid` 自动拒绝（`dist_metrics.json` 记 `not_estimable`，见 §6 复现），**不编造数字**。扩样（≥100，推荐 ≥10⁴ 张彩色图）后加 `--fid` 即可出 FID/KID（InceptionV3 特征 + Fréchet / 无偏 MMD²）。**待扩样**。
 
 ### 4.2 Track B · 无参考真实黑白老照片（n=8）
 
@@ -171,9 +174,10 @@ python3 inference/photo/tools/bench_colorize.py \
   --out /mnt/data/ai_workspace/outputs/colorize-bench-226 --work-res 512
 
 # 只从已落盘 PNG 重算指标（改口径/修 bug 后回填，不重跑模型）
+# --fid 额外算 FID/KID（n<100 自动拒绝并写 dist_metrics.json）
 python3 inference/photo/tools/bench_colorize.py --recompute \
   --track-b-dir "/mnt/data/ai_workspace/DDColor/assets/test_images" \
-  --out /mnt/data/ai_workspace/outputs/colorize-bench-226 --work-res 512
+  --out /mnt/data/ai_workspace/outputs/colorize-bench-226 --work-res 512 --fid
 ```
 
 **产物**：`/mnt/data/ai_workspace/outputs/colorize-bench-226/`（`per_image.json` 全量逐图指标 + `summary_A.{md,json}` / `summary_B.{md,json}` 含显著性与每图预测 PNG）。运行日志 `runAB.log`、`runB.log`。
@@ -187,7 +191,7 @@ python3 inference/photo/tools/bench_colorize.py --recompute \
 5. **`edge_align` 未显著**：单像素梯度相关对噪声敏感；**待验证**：改用多尺度或边界带 ΔE00 更稳。
 6. **随机性**：SDXL 固定 seed=42，仅代表单次采样；**待验证**：同图多 seed（≥3）报方差。
 7. **Track A 的色度迁移口径**：所有上色输出都做了 `chroma_transfer` 绑回输入 L，故 DDColor-native 与 D2 在 Track A 几乎相同；这**不测**原生输出在 Lab→RGB 的色域裁剪/亮度漂移。
-8. **FID 未本地计算**：需 ≥千张量级分布样本，本集（A n=6 / B n=8）不足以给出可信 FID，仅引论文数值；**待扩样**。ΔCF/CF 已本地计算（Track A）。
+8. **FID/KID 未出数（实现 + 门禁已就绪）**：需 ≥100（推荐 ≥10⁴）张彩色图，本集（A n=6 / B n=8）不足以估；`--fid` 在 n<100 时**自动拒绝**并记 `not_estimable`；扩样后即可出数。CF/ΔCF/L_shift 已本地计算（Track A）。
 
 ## 8. 落地建议
 

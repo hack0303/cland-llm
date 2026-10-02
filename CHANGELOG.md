@@ -7,6 +7,7 @@ description: record your changes
 ## 20261002
 
 ### Changes
+- 评测/上色（#226，curie）：Track A 补 **|ΔL|（L_shift）** + **FID/KID 实现与采样量门禁**——`bench_colorize.py` 新增 `--fid`（n<100 自动拒绝并记 `dist_metrics.json: not_estimable`，不编造数字）；Track A 出 `L_shift`（全变体≈0.4 Lab，主体为灰度化底噪，`gray`=0.387）；至此 DoD 项 PSNR/SSIM/CF/ΔCF/|ΔL| 本地齐，FID 待扩样
 
 - 调研/上色（#226）：按 curie 评测（Track A/B）采纳**口径修正**（turing 出补丁、curie 代提交 · CI-033 单写者）——`docs/ddcolor-原理调研.md` §1/§4.3/§5.3/§9：①「全面优于 DeOldify/SDXL」→**分口径**（Track B 空间伪影/结构保真显著优；Track A 单图色度还原不占优）；②**§5.3 修正**：D2 的 `L_shift` 4× 提升**仅 #225 单素材成立，Track B n=8 中位 0.109→0.139 未复现 → 降级为待验证**；D2 vs SDXL-0.80 仍显著；③§4.3 补 Track B n=8 表 + 显著性；④§9 局限互引评测文档
 - 评测/上色（#226，curie）：新增 `docs/ddcolor-评测-指标口径与基线对比.md` + 评测脚本 `inference/photo/tools/bench_colorize.py`（Track A 有 GT 参考基准 / Track B 无参考真实老照片 · 逐指标口径 + 配对显著性）。实测：**Track B（n=8）DDColor(D2) 相对 SDXL-0.80 显著更少蓝青伪影**（`skin_blue%` 0.25 vs 13.77，Wilcoxon p=0.023、Cliff δ=−0.84）、**亮度保真更好**（`L_shift` 0.139 vs 0.377，p=0.008）；**Track A（n=6）DDColor 参考色差反而劣于 SDXL-0.45**（`ΔE00` 14.17 vs 8.86）→ 修正结论口径：DDColor 优在「分布自然度 + 空间伪影 + 结构保真」，非单图色度还原。DeOldify 因权重源不可达未本机实测（待验证）

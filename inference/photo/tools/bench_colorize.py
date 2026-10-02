@@ -181,6 +181,7 @@ def track_a_metrics(gt: Image.Image, pred: Image.Image) -> dict:
     mi = chroma_misplacement(gt, pred)
     cf_pred = colorfulness(pred)
     cf_gt = colorfulness(gt)
+    l_shift = float(np.mean(np.abs(gt_lab[..., 0] - pr_lab[..., 0])))
     return {
         "psnr": round(psnr_v, 2),
         "ssim": round(ssim_v, 4),
@@ -190,6 +191,7 @@ def track_a_metrics(gt: Image.Image, pred: Image.Image) -> dict:
         "misplace_idx": round(mi, 3),
         "colorfulness": round(cf_pred, 1),
         "dCF": round(abs(cf_pred - cf_gt), 1),
+        "L_shift": round(l_shift, 4),
     }
 
 
@@ -336,6 +338,89 @@ def significance_table(per_image: list[dict], metrics: list[str], baseline: str,
     return rows
 
 
+# ------------------------------------------------------------------ 分布指标（FID/KID）
+# FID 的稳定估计需 ~10^4 样本（经验下限 ≥100，且样本数 <<特征维时会奇异）。
+# 本机 Track A 仅 6 张 → 不估（避免误导）；扩样后加 --fid 即可出数。
+MIN_FID_N = 100
+
+
+def _inception_feats(paths: list[Path]) -> np.ndarray:
+    import torch
+    from torchvision import transforms
+    from torchvision.models import Inception_V3_Weights, inception_v3
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    m = inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1, transform_input=False)
+    m.fc = torch.nn.Identity()
+    m = m.eval().to(dev)
+    tf = transforms.Compose([transforms.Resize((299, 299)), transforms.ToTensor(),
+                             transforms.Normalize([.485, .456, .406], [.229, .224, .225])])
+    out = []
+    with torch.no_grad():
+        for p in paths:
+            x = tf(Image.open(p).convert("RGB")).unsqueeze(0).to(dev)
+            out.append(m(x).cpu().numpy()[0])
+    return np.asarray(out, np.float32)
+
+
+def _fid(a: np.ndarray, b: np.ndarray) -> float:
+    from scipy.linalg import sqrtm
+    mu1, mu2 = a.mean(0), b.mean(0)
+    c1, c2 = np.cov(a, rowvar=False), np.cov(b, rowvar=False)
+    covmean = sqrtm(c1 @ c2)
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+    d = mu1 - mu2
+    return float(d @ d + np.trace(c1 + c2 - 2 * covmean))
+
+
+def _kid(a: np.ndarray, b: np.ndarray, seed: int = 20261002) -> tuple[float, float]:
+    """无偏 MMD²（3 次多项式核，Inception 特征）；返回 (kid, 标准差)。"""
+    rng = np.random.default_rng(seed)
+    d = a.shape[1]
+
+    def k(x, y):
+        return (x @ y.T / d + 1.0) ** 3
+
+    kaa, kbb, kab = k(a, a), k(b, b), k(a, b)
+    na, nb = len(a), len(b)
+    # 无偏估计：对角置零
+    np.fill_diagonal(kaa, 0.0)
+    np.fill_diagonal(kbb, 0.0)
+    mmd = (kaa.sum() / (na * (na - 1)) + kbb.sum() / (nb * (nb - 1)) - 2 * kab.mean())
+    # 分块 bootstrap 估标准差
+    vals = []
+    for _ in range(50):
+        ia = rng.integers(0, na, na)
+        ib = rng.integers(0, nb, nb)
+        vals.append(k(a[ia], a[ia]).sum() / (na * na) + k(b[ib], b[ib]).sum() / (nb * nb)
+                    - 2 * k(a[ia], b[ib]).mean())
+    return float(mmd), float(np.std(vals))
+
+
+def compute_dist_metrics(outdir: Path, variants: list[str]) -> dict:
+    a_root = outdir / "A"
+    if not a_root.exists():
+        return {}
+    dirs = sorted(d for d in a_root.iterdir() if d.is_dir() and (d / "gt.png").exists())
+    res = {}
+    for v in variants:
+        preds = [d / f"{v}.png" for d in dirs if (d / f"{v}.png").exists()]
+        n = len(preds)
+        if n == 0:
+            continue
+        if n < MIN_FID_N:                                  # 采样量门禁
+            res[v] = {"n": n, "fid": "not_estimable",
+                      "kid": "not_estimable",
+                      "reason": f"n={n} < MIN_FID_N={MIN_FID_N}；FID/KID 需 ≥{MIN_FID_N}（推荐 ≥10^4）"}
+            continue
+        gts = [d / "gt.png" for d in dirs if (d / f"{v}.png").exists()]
+        fa, fb = _inception_feats(preds), _inception_feats(gts)
+        kid, kid_sd = _kid(fa, fb)
+        res[v] = {"n": n, "fid": round(_fid(fa, fb), 3),
+                  "kid": round(kid, 5), "kid_sd": round(kid_sd, 5)}
+    return res
+
+
 # ------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser()
@@ -349,6 +434,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="每轨最多取 N 张（0=全部）")
     ap.add_argument("--recompute", action="store_true",
                     help="不跑模型，从已保存 PNG 重算指标并重建汇总")
+    ap.add_argument("--fid", action="store_true",
+                    help=f"额外计算 Track A 分布指标 FID/KID（n<{MIN_FID_N} 时自动拒绝）")
     args = ap.parse_args()
 
     outdir = Path(args.out)
@@ -360,6 +447,11 @@ def main():
         (outdir / "per_image.json").write_text(
             json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         write_summaries(outdir, rows, variants)
+        if args.fid:
+            dist = compute_dist_metrics(outdir, variants)
+            (outdir / "dist_metrics.json").write_text(
+                json.dumps(dist, ensure_ascii=False, indent=2), encoding="utf-8")
+            print("[fid/kid] " + json.dumps(dist, ensure_ascii=False), flush=True)
         print(f"\n[recompute done] {len(rows)} rows -> {outdir}", flush=True)
         return
 
@@ -433,7 +525,7 @@ def main():
 
 
 TRACK_METRICS = {
-    "A": ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness", "dCF"],
+    "A": ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness", "dCF", "L_shift"],
     "B": ["skin_blue_pct", "whole_blue_pct", "edge_align", "bleed_ratio",
           "colorfulness", "L_shift"],
 }
