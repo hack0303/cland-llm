@@ -84,3 +84,17 @@
 - **价值**：本地无 VLM 也能给出可复现的质量底线与方案对比（如 AI 修复 vs 纯超分基线的保真差异：SSIM 0.40 vs 0.52）；"合成退化"让无 GT 的老照片场景也有了可算指标的主体，评审人只需看图
 - **落地**：`inference/photo/{degrade.py,evaluate.py}`；报告 `docs/photo-retouch-v0.md` §5/§6；产物 `outputs/photo-retouch/{metrics.json,owner_overview.png}`
 - **复用**：任何图像生成/修复任务，先造"退化-复原对"再上指标；无参指标用于没有 GT 的样例，代理评分只做趋势不做定论（须标注"待人工校准"）
+
+## 六、上色 / 修图（#224/#225）
+
+### 1. 上色 = DDColor 色度 + work 亮度（D2）：保结构、消串色
+- **实践**：上色出色用 **DDColor-L**（结构保真），再 `chroma_transfer(DDColor出色, work)` 只取**色度 a/b**、保留**原图亮度 L**；**不套 skin_fix**
+- **价值**：皮肤蓝晕 0 · 色度最足最自然 · 结构对齐最好（#225 四路对比：D2 edge_align 0.243 / L_shift 0.076；对比 SDXL 蓝块 / 越权）
+- **落地**：`inference/photo/retouch.py --colorizer ddcolor`
+- **复用**：通用 img2img 上色易串位时，换结构保真专用模型 + 只迁色度
+
+### 2. 四选/海报图按**焦点**裁剪（`cover_bias`）避免人物截头
+- **实践**：`gen_service` 的缩略图用 `cover_bias(im, w, h, fy=…)` 按焦点裁剪（修复/高清看上 12–20%，电商 55%），替代居中 `cover`
+- **价值**：全身像是居中 cover 会**截头**；焦点裁剪保证人物头部完整
+- **落地**：`inference/photo/marketing.py`
+- **复用**：任何"竖构图缩略进方框"场景按主体位置设 fy
