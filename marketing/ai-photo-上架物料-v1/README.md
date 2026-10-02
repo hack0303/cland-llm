@@ -59,7 +59,7 @@ python3 inference/photo/marketing.py \
 ## 五、边界
 
 - 不承诺 100% 还原（图内注明）。
-- **上色引擎（#225）**：main/ba-01/ba-03 与 service 上色面板改用 **DDColor-L** 出色 + `chroma_transfer` 保原图亮度/质感，消除旧链路（SDXL strength=0.80）的手臂/衣物蓝块串色；详见 `docs/photo-colorize-offset-225.md`。
+- **上色引擎（#225）**：main/ba-01/ba-03 与 service 上色面板改用 **DDColor-L** 出色 + `chroma_transfer` 保原图亮度/质感（**不套 skin_fix**），消除旧链路（SDXL strength=0.80）的手臂/衣物蓝块串色；详见 `docs/photo-colorize-offset-225.md`。
 - **ba-04**：改用**真实老照片**（WW1 肖像，PD）演示破损修复（去划痕/白斑 + 修复），替换原油画对拍图。
 
 — sage（ai_engineer）· v2 · 2026-10-02（#224 重出 4 件：main-01 / ba-01 / service-01 / ba-04）
