@@ -38,6 +38,7 @@ updated: "2026-10-01"
  ① Pillow 预处理    EXIF 转正 → 自动裁剪均匀边框(≤12%) → 色阶 autocontrast / 白点归一(product)
  ② RealESRGAN 4x    RRDBNet 分块推理(256 tile + 16 重叠羽化)，复用 hand_pipe/rrdbnet.py 已验证权重适配
  ③ SDXL img2img     低强度 + mode 提示词（P40 fp16，进程内加载；实际步数 = int(steps×strength)）
+   └ colorize 可选 **DDColor-L** 出色（`--colorizer ddcolor`，见 §5.5；#225 验证首选）
  ④ 收尾/合成        colorize: LAB 色度迁移(保结构) · product: 连通域白底 · repair: 黑白输入保持黑白
  → <case>/{before,after,compare}.png + meta.json；run.json + metrics.json + owner_overview.png
 ```
@@ -45,6 +46,7 @@ updated: "2026-10-01"
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `--mode` | repair | `repair` 修复 / `upscale` 仅超分 / `colorize` 上色 / `product` 商品白底 |
+| `--colorizer` | sdxl | colorize 出色引擎：`sdxl`（原链路）/ `ddcolor`（**#225 验证首选**，DDColor-L 出色 + chroma_transfer 保 work 亮度；路径 `DDCOLOR_REPO`/`DDCOLOR_CKPT` 可覆盖） |
 | `--strength` | 按 mode：repair .25 / colorize .80 / product .25 | img2img 去噪强度（0.25 保结构；上色需 ≥0.8 才有色彩） |
 | `--seed` | 42 | 固定可复现（同 seed 同输入输出一致） |
 | `--batch` | 1 | 同模式组批送 SDXL（P40 无 Tensor Core，批>1 无加速收益，默认 1） |
@@ -55,6 +57,7 @@ updated: "2026-10-01"
 **关键设计**（经 3 轮参数对照实测，见 §6）：
 1. **低强度 + 小步长**：SDXL img2img 在 `strength 0.25 × steps 80` 时结构保持最好（对比 0.25×30、0.55×30 等）；
 2. **上色 = 大强度重绘 + 色度迁移**：色度来自 AI（0.8 强度重绘），亮度沿用修复后原图（LAB L 通道）→ 上色不毁脸不漂结构；
+   ⚠️ **#225 实测：SDXL strength=0.80 会在手臂/衣物生成蓝块串色** → 老照片上色改用 **DDColor-L（`--colorizer ddcolor`）**，或 SDXL 降 to `strength 0.35–0.45`（色彩变淡）。详见 `docs/photo-colorize-offset-225.md`；
 3. **黑白修复保持黑白**：repair 模式检测灰度输入后回转 L 模式（上色请走 colorize）。
 
 ## 3. 素材（仅公有领域 / CC0）
@@ -175,6 +178,26 @@ python3 inference/photo/evaluate.py --run <OUT>/run.json --overview <OUT>/owner_
 ### 5.4 pair01 用途说明（#179 收尾口径）
 
 `pair01/02/03` 是**内部评测对拍集**（对公有领域图人工退化，**有 GT 可算 PSNR/SSIM**），**不是交付样例**。因此 `owner_overview.png` 已改版：正文只放**交付样例**（老照片 `hist` / 电商 `prod`，共 6 例），对拍集单列 **「评测附录（对拍集 pair · 内部回归基线，有 GT 算 PSNR/SSIM，非交付样例）」（5 例），避免再次"不知道做什么用的"。
+
+### 5.5 DDColor 上色链路（D2 · #225 落地）
+
+**问题**：Owner 反馈老照片上色「**脸 OK，手臂/衣服颜色覆盖位置有偏移**」。四路验证（`docs/photo-colorize-offset-225.md`）坐实根因：SDXL colorize `strength=0.80` 近乎重绘，手臂/衣物结构位移；`chroma_transfer` 无几何配准 → 蓝块串色（hist01 皮肤区蓝占比 **4.51%**）。
+
+**D2 链路**（`retouch.py --colorizer ddcolor`）：
+1. **DDColor-L 出色**：ImageNet 预训练专用上色模型（权重 `models/ddcolor/ddcolor_modelscope.pt` 912MB，来源 modelscope `damo/cv_ddcolor_image-colorization`）；
+2. **chroma_transfer 保亮度**：只取 DDColor 的 a/b 色度，盖到 work 原图 L 上 → 保结构/质感。
+
+**四路对比（hist01，同 work）**：
+
+| 方案 | 皮肤区蓝晕% | 色彩度 | 结构对齐 | 亮度偏移 | 出色耗时 |
+|---|---|---|---|---|---|
+| A0 SDXL s=0.80（基线） | 4.51 | 6.74 | 0.051 | 0.095 | 120s |
+| A SDXL s=0.45 | 0.00 | 2.13 | 0.066 | 0.065 | 67s |
+| B 光流配准 s=0.80 | 2.83 | 6.73 | 0.073 | 0.094 | 120s |
+| C 掩膜 s=0.80 | 4.51 | 6.75 | 0.053 | 0.118 | 120s |
+| **D2 DDColor→work 亮度** | **0.00** | **17.96** | **0.243** | **0.076** | **~0.3s** |
+
+**结论**：D2 皮肤蓝晕 0、色度最足最自然、结构对齐最好、保 work 亮度 → **老照片上色首选**；SDXL 兜底降 `strength 0.35–0.45`。复现脚本 `tools/cmp_colorize_offset.py`、`tools/run_ddcolor.py`。
 
 ## 6. 关键实验记录（为什么是这套参数）
 
