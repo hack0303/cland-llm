@@ -231,7 +231,7 @@ def gen_service(src: Path, out: Path) -> None:
     items = [
         ("老照片修复", "去噪 · 去划痕 · 恢复清晰", "hist01_migrant_mother_repair", (90, 98, 106)),
         ("黑白照上色", "黑白 → 自然彩色", "hist01_migrant_mother_colorize", GREEN),
-        ("高清增强", "小图放大 · 更清晰", "pair03_great_wave_esrgan", (34, 96, 160)),
+        ("高清增强", "小图放大 · 更清晰", "hist01_migrant_mother_upscale", (34, 96, 160)),
         ("电商主图", "去背 · 纯白底 · 自然阴影", "prod01_potpourri_jar", (150, 92, 30)),
     ]
     m, gap, top = 48, 30, 258
@@ -383,7 +383,7 @@ BA_GROUPS = [
     ("ai-photo-ba-04-1200x1200.jpg", "破损修复 · 前后对比", "降质 / 减损图像 → 清晰还原",
      "pair01_harvesters_ai", 0.5, 1.0),
     ("ai-photo-ba-05-1200x1200.jpg", "高清增强 · 前后对比", "低清小图 → 高清细节",
-     "pair03_great_wave_esrgan", 0.5, 1.0),
+     "hist01_migrant_mother_upscale", 0.30, 0.72),
 ]
 
 

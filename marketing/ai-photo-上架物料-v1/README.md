@@ -32,7 +32,7 @@
 | ba-02 | `hist01_migrant_mother_repair` | repair | 同上 · **PD** |
 | ba-03 | `hist02_lincoln_colorize` | colorize | Lincoln 1863 肖像 · **PD** |
 | ba-04 | `pair01_harvesters_ai` | repair | Pieter Bruegel《The Harvesters》· **PD** |
-| ba-05 | `pair03_great_wave_esrgan` | upscale | 葛饰北斋《神奈川冲浪里》· **PD** |
+| ba-05 | `hist01_migrant_mother_upscale` | upscale | Dorothea Lange 1936（**干净降采样低清输入 → 超分**）· **PD** |
 
 - 所有 A1/A2 图内已标 **「公有领域素材演示」** + **「AI 技术制作」**。
 - **去技术化**：图内不出现模型/管线/内部路径/工单/人名（对齐 #219）。
@@ -60,6 +60,7 @@ python3 inference/photo/marketing.py \
 
 - 渠道未开通不影响产图（本批仅为素材）。
 - 不承诺 100% 还原；BA-01 保留真实产线色彩瑕疵（儿童发丝/衣物局部色偏），以「效果受原图影响」如实呈现。
-- 画作类（ba-04/05）为 PD 艺术素材演示，非老照片；运营可按需取用或仅用 ba-01~03。
+- ba-04 为 PD **画作**演示（非老照片）；ba-01/02/03/05 均为老照片。运营可按需取用。
+- `hist01_migrant_mother_upscale` 为本次新增的**真实产线** upscale 产出（干净降采样输入，无划痕，展示纯超分效果）。
 
 — sage（ai_engineer）· v1 · 2026-10-02
