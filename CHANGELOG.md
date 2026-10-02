@@ -8,6 +8,8 @@ description: record your changes
 
 ### Changes
 
+- 上色引擎（#225 落地）：`retouch.py` colorize 新增 `--colorizer ddcolor`——**DDColor-L 出色 + `chroma_transfer` 保 work 亮度**（消除 SDXL strength=0.80 的手臂/衣物蓝块串色；出色 ~0.3s/张，权重 `models/ddcolor/ddcolor_modelscope.pt`、仓库 `DDColor/`，可用 `DDCOLOR_REPO/DDCOLOR_CKPT` 覆盖）；默认仍 `--colorizer sdxl`
+- 上架物料（#224 重出 4 件）：main-01/ba-01/service-01 上色改用 DDColor 干净链路重出；ba-04 由「油画对拍」改为**真实老照片**（WW1 肖像 PD）破损修复（`remove_damage`）；`marketing.py` ba-04 与 service 上色面板 source case 同步更新；`marketing/ai-photo-上架物料-v1/` 10 件 + README/manifest 重出（v2）
 - 修图/上色调研（#225）：老照片上色「颜色覆盖位置偏移」四路验证——新增 `docs/photo-colorize-offset-225.md`（A SDXL调参 / B 色度层配准 / C 掩膜约束 / D DDColor 专用模型 · 同素材对拍 + 对比表 + 推荐）与实验脚本 `inference/photo/tools/cmp_colorize_offset.py`（A/B/C）、`inference/photo/tools/run_ddcolor.py`（D）。**结论：D(DDColor)最优**（皮肤蓝晕 4.5%→0、色度最足、结构对齐最好）；SDXL 兜底 strength 0.80→0.45 可清蓝块（色彩变淡）。修正 `retouch.py` docstring 与预设长期不一致（原写「≤0.6 / colorize .45 / steps 30」，实际 .80 / steps 80）
 - 修图（#224 后置项）：repair 模式新增去划痕/去白斑/去霉点（`remove_damage()` + `--damage-fix`），形态学 top-hat/black-hat 检测 + Telea inpaint
 

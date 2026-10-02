@@ -34,7 +34,7 @@
     "file": "ai-photo-ba-04-1200x1200.jpg",
     "role": "A2 修复前后对比图",
     "title": "破损修复 · 前后对比",
-    "source_case": "pair01_harvesters_ai",
+    "source_case": "hist03_burnley_repair",
     "source": "photo.retouch 真实产出",
     "license": "素材 PD/CC0"
   },

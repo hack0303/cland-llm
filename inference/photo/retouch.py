@@ -15,6 +15,7 @@
 
 参数：
     --mode repair|upscale|colorize|product   （manifest 模式下为默认值）
+    --colorizer sdxl|ddcolor   colorize 出色引擎（默认 sdxl；ddcolor=#225 验证首选专用上色模型，仅 colorize 生效）
     --strength   img2img 去噪强度（<=0.9；未给则用 mode 预设：repair .25 / colorize .80 / product .35）
                  ⚠️ #225 实测 colorize .80 易致手臂/衣物蓝块串色，建议 .35–.45（见 docs/photo-colorize-offset-225.md）
     --seed       随机种子（复现用）
@@ -28,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -397,6 +399,45 @@ def run_diffusion(pipe, images: list[Image.Image], mode: str, strength: float,
     return out, round(dt, 2)
 
 
+# ---- DDColor 专用上色模型（#225 验证结论：老照片上色首选）----
+DDCOLOR_REPO = os.environ.get("DDCOLOR_REPO", "/mnt/data/ai_workspace/DDColor")
+DDCOLOR_CKPT = os.environ.get("DDCOLOR_CKPT",
+                              "/mnt/data/ai_workspace/models/ddcolor/ddcolor_modelscope.pt")
+_ddcolor_cache = None
+
+
+def load_ddcolor(input_size: int = 512):
+    """惰性加载 DDColor-L（ImageNet 预训练）；权重/仓库路径见 DDCOLOR_CKPT/DDCOLOR_REPO。"""
+    global _ddcolor_cache
+    if _ddcolor_cache is not None:
+        return _ddcolor_cache
+    import torch
+    if DDCOLOR_REPO not in sys.path:
+        sys.path.insert(0, DDCOLOR_REPO)
+    from ddcolor import DDColor, ColorizationPipeline, build_ddcolor_model  # noqa: E402
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    t0 = time.time()
+    model = build_ddcolor_model(DDColor, model_path=DDCOLOR_CKPT, input_size=input_size,
+                                model_size="large", device=dev)
+    _ddcolor_cache = ColorizationPipeline(model, input_size=input_size, device=dev)
+    print(f"[ddcolor] loaded in {time.time() - t0:.1f}s", flush=True)
+    return _ddcolor_cache
+
+
+def run_ddcolor(pipe, images: list[Image.Image]) -> tuple[list[Image.Image], float]:
+    """DDColor 逐张出色（自带亮度）；后续由 chroma_transfer 只取色度、保住 work 亮度。"""
+    import cv2
+    t0 = time.time()
+    outs = []
+    for im in images:
+        bgr = cv2.cvtColor(np.asarray(im.convert("RGB")), cv2.COLOR_RGB2BGR)
+        out = pipe.process(bgr)
+        outs.append(Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
+    dt = time.time() - t0
+    print(f"[ddcolor] {len(images)} img colorized {dt:.1f}s", flush=True)
+    return outs, round(dt, 2)
+
+
 # -------------------------------------------------------------------- compare
 def _font(path: str, size: int) -> ImageFont.FreeTypeFont:
     try:
@@ -477,6 +518,8 @@ def main():
     ap.add_argument("--manifest", help="cases.json：逐案例 input/mode/strength/gt")
     ap.add_argument("--output", required=True, help="输出目录（产出 <case>/{before,after,compare,meta}）")
     ap.add_argument("--mode", default="repair", choices=["repair", "upscale", "colorize", "product"])
+    ap.add_argument("--colorizer", default="sdxl", choices=["sdxl", "ddcolor"],
+                    help="colorize 出色引擎（默认 sdxl；ddcolor=#225 验证首选的专用上色模型，仅 colorize 模式生效）")
     ap.add_argument("--strength", type=float, default=None, help="img2img 去噪强度（默认按 mode）")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--batch", type=int, default=1, help="同 mode 下每次送 SDXL 的图片数")
@@ -561,6 +604,7 @@ def main():
 
     # ---------- Phase B: SDXL 修复/上色（按 mode 分批） ----------
     pipe = None
+    ddpipe = None
     prepared = [m for m in metas if m["status"] == "prepared" and m["mode"] != "upscale"]
     idx = 0
     while idx < len(prepared):
@@ -577,12 +621,18 @@ def main():
             j += 1
         idx = j
         try:
-            if pipe is None:
-                pipe = load_sdxl_img2img()
-            t0 = time.time()
-            outs, dt = run_diffusion(pipe, [m["_work"] for m in grp], grp[0]["mode"],
-                                     grp[0]["strength"], grp[0]["steps"], grp[0]["seed"],
-                                     grp[0]["guidance"], grp[0].get("prompt"), grp[0].get("negative"))
+            if grp[0]["mode"] == "colorize" and args.colorizer == "ddcolor":
+                if ddpipe is None:
+                    ddpipe = load_ddcolor()
+                t0 = time.time()
+                outs, dt = run_ddcolor(ddpipe, [m["_work"] for m in grp])
+            else:
+                if pipe is None:
+                    pipe = load_sdxl_img2img()
+                t0 = time.time()
+                outs, dt = run_diffusion(pipe, [m["_work"] for m in grp], grp[0]["mode"],
+                                         grp[0]["strength"], grp[0]["steps"], grp[0]["seed"],
+                                         grp[0]["guidance"], grp[0].get("prompt"), grp[0].get("negative"))
             for m, o in zip(grp, outs):
                 m["_out"] = o
                 m["timings"]["diffusion"] = round(dt / len(grp), 2)

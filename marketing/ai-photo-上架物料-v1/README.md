@@ -28,10 +28,10 @@
 
 | 图 | 产线 case | 模式 | 素材（公有领域 / CC0） |
 |---|---|---|---|
-| main / ba-01 | `hist01_migrant_mother_colorize` | colorize | Dorothea Lange《Migrant Mother》1936 · **PD** |
+| main / ba-01 | `hist01_migrant_mother_colorize` | colorize (DDColor) | Dorothea Lange《Migrant Mother》1936 · **PD** |
 | ba-02 | `hist01_migrant_mother_repair` | repair | 同上 · **PD** |
-| ba-03 | `hist02_lincoln_colorize` | colorize | Lincoln 1863 肖像 · **PD** |
-| ba-04 | `pair01_harvesters_ai` | repair | Pieter Bruegel《The Harvesters》· **PD** |
+| ba-03 | `hist02_lincoln_colorize` | colorize (DDColor) | Lincoln 1863 肖像 · **PD** |
+| ba-04 | `hist03_burnley_repair` | repair (damage-fix) | Private John Burnley WW1 肖像 · **PD** |
 | ba-05 | `hist01_migrant_mother_upscale` | upscale | Dorothea Lange 1936（**干净降采样低清输入 → 超分**）· **PD** |
 
 - 所有 A1/A2 图内已标 **「公有领域素材演示」** + **「AI 技术制作」**。
@@ -58,9 +58,8 @@ python3 inference/photo/marketing.py \
 
 ## 五、边界
 
-- 渠道未开通不影响产图（本批仅为素材）。
-- 不承诺 100% 还原；BA-01 保留真实产线色彩瑕疵（儿童发丝/衣物局部色偏），以「效果受原图影响」如实呈现。
-- ba-04 为 PD **画作**演示（非老照片）；ba-01/02/03/05 均为老照片。运营可按需取用。
-- `hist01_migrant_mother_upscale` 为本次新增的**真实产线** upscale 产出（干净降采样输入，无划痕，展示纯超分效果）。
+- 不承诺 100% 还原（图内注明）。
+- **上色引擎（#225）**：main/ba-01/ba-03 与 service 上色面板改用 **DDColor-L** 出色 + `chroma_transfer` 保原图亮度/质感，消除旧链路（SDXL strength=0.80）的手臂/衣物蓝块串色；详见 `docs/photo-colorize-offset-225.md`。
+- **ba-04**：改用**真实老照片**（WW1 肖像，PD）演示破损修复（去划痕/白斑 + 修复），替换原油画对拍图。
 
-— sage（ai_engineer）· v1 · 2026-10-02
+— sage（ai_engineer）· v2 · 2026-10-02（#224 重出 4 件：main-01 / ba-01 / service-01 / ba-04）

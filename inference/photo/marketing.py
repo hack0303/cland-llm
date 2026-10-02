@@ -230,7 +230,7 @@ def gen_service(src: Path, out: Path) -> None:
     canvas, d = page("四项服务 · 一站搞定", "修复 / 上色 / 高清增强 / 电商主图")
     items = [
         ("老照片修复", "去噪 · 去划痕 · 恢复清晰", "hist01_migrant_mother_repair", (90, 98, 106)),
-        ("黑白照上色", "黑白 → 自然彩色", "hist01_migrant_mother_colorize", GREEN),
+        ("黑白照上色", "黑白 → 自然彩色", "hist02_lincoln_colorize", GREEN),
         ("高清增强", "小图放大 · 更清晰", "hist01_migrant_mother_upscale", (34, 96, 160)),
         ("电商主图", "去背 · 纯白底 · 自然阴影", "prod01_potpourri_jar", (150, 92, 30)),
     ]
@@ -380,8 +380,8 @@ BA_GROUPS = [
      "hist01_migrant_mother_repair", 0.30, 0.62),
     ("ai-photo-ba-03-1200x1200.jpg", "老照片上色 · 前后对比", "百年人像 → 自然肤色",
      "hist02_lincoln_colorize", 0.34, 0.60),
-    ("ai-photo-ba-04-1200x1200.jpg", "破损修复 · 前后对比", "降质 / 减损图像 → 清晰还原",
-     "pair01_harvesters_ai", 0.5, 1.0),
+    ("ai-photo-ba-04-1200x1200.jpg", "破损修复 · 前后对比", "破损老照片 → 去划痕白斑 · 清晰还原",
+     "hist03_burnley_repair", 0.42, 0.9),
     ("ai-photo-ba-05-1200x1200.jpg", "高清增强 · 前后对比", "低清小图 → 高清细节",
      "hist01_migrant_mother_upscale", 0.30, 0.72),
 ]
