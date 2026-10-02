@@ -31,7 +31,7 @@ status: "2026-10-02 · 首版"
 
 ## 三、许可与合规
 
-- DDColor：代码 MIT；权重来自 modelscope（研究/商用请复核模型卡条款）。
+- DDColor：**代码 Apache-2.0**；**权重 Apache-2.0**（HF `piddnad/ddcolor_modelscope` 模型卡，经 hf-mirror 核实）→ **可商用**，保留 LICENSE 与模型卡引用。
 - RealESRGAN / 4x-UltraSharp：BSD-3 / 各自许可证。
 - DWPose：Apache-2.0。
 - SDXL base：CreativeML Open RAIL++-M。
