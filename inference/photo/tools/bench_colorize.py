@@ -179,6 +179,8 @@ def track_a_metrics(gt: Image.Image, pred: Image.Image) -> dict:
     bw_de = float(dE[edge].mean()) if edge.sum() > 50 else float("nan")
     de_raw = float(dE.mean())
     mi = chroma_misplacement(gt, pred)
+    cf_pred = colorfulness(pred)
+    cf_gt = colorfulness(gt)
     return {
         "psnr": round(psnr_v, 2),
         "ssim": round(ssim_v, 4),
@@ -186,7 +188,8 @@ def track_a_metrics(gt: Image.Image, pred: Image.Image) -> dict:
         "dE00": round(de_raw, 2),
         "bw_dE00": round(bw_de, 2),
         "misplace_idx": round(mi, 3),
-        "colorfulness": round(colorfulness(pred), 1),
+        "colorfulness": round(cf_pred, 1),
+        "dCF": round(abs(cf_pred - cf_gt), 1),
     }
 
 
@@ -430,7 +433,7 @@ def main():
 
 
 TRACK_METRICS = {
-    "A": ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness"],
+    "A": ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness", "dCF"],
     "B": ["skin_blue_pct", "whole_blue_pct", "edge_align", "bleed_ratio",
           "colorfulness", "L_shift"],
 }
