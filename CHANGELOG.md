@@ -8,6 +8,8 @@ description: record your changes
 
 ### Changes
 
+- 修图/上架物料（#224 A 类）：新增 `inference/photo/marketing.py`——以**真实产线** `photo.retouch` 的 before/after 为素材，Pillow 生成渠道上架效果图（全部 1200×1200 · 1:1）：A1 首图主图 ×1 · A2 前后对比图 ×5 · A3 服务四选图 · A4 流程时效图 · A5 合规隐私图 · A6 价格套餐图；交付目录 `marketing/ai-photo-上架物料-v1/`（含 `README.md` 索引 + `manifest.json` 溯源）
+- 素材合规：仅用 PD/CC0（Dorothea Lange 1936 / Lincoln 1863 / Bruegel《The Harvesters》/ 葛饰北斋《神奈川冲浪里》），图内标注「公有领域素材演示」；**去技术化**（无模型/管线/内部路径/工单/人名）；价格严格引《定价战术 v0》（¥19/49/129；新客 ¥9.9 限 1 张；电商主图 ¥59/张 · 5 张 ¥199）
 - 推理/修图（#179 收尾）：colorize 新增**脸/手臂肤色色偏修复**——`build_skin_mask()` 用 DWPose（已有人脸 68 点+双手+肘腕关键点，CPU onnxruntime）生成脸/手/前臂/颈软掩膜（眼部挖洞+羽化）；`fix_skin_color_cast()` 在 LAB 内把掩膜内色相异常像素（天然肤色窗口 22°–72° 之外，如蓝色手部）拉回暖肤色 43°、饱和度夹取 5–10，亮度纹理不动；逐案例开关 `skin_fix`（CLI `--skin-fix` / manifest 字段），并输出 `skin_zoom.png`（修复前/后面部放大证据）
 - 评估/总览：`owner_overview.png` 改版——正文只放**交付样例**（老照片 hist / 电商 prod），对拍集（pair*）单列**「评测附录（内部回归基线，有 GT 算 PSNR/SSIM，非交付样例）」**，避免用途混淆
 - 实测（hist01_migrant_mother_colorize）：蓝色手部/青色眼周伪影消除，整体色彩度 19.5→19.0（−2.6%，≤±20%），5 维评分无回退；仅 hist01 开 `skin_fix`，其余 10 例 sha256 逐字节不变

@@ -1,0 +1,69 @@
+[
+  {
+    "file": "ai-photo-main-01-1200x1200.jpg",
+    "role": "A1 首图主图",
+    "source_case": "hist01_migrant_mother_colorize",
+    "source": "photo.retouch colorize 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-ba-01-1200x1200.jpg",
+    "role": "A2 修复前后对比图",
+    "title": "老照片上色 · 前后对比",
+    "source_case": "hist01_migrant_mother_colorize",
+    "source": "photo.retouch 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-ba-02-1200x1200.jpg",
+    "role": "A2 修复前后对比图",
+    "title": "老照片修复 · 前后对比",
+    "source_case": "hist01_migrant_mother_repair",
+    "source": "photo.retouch 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-ba-03-1200x1200.jpg",
+    "role": "A2 修复前后对比图",
+    "title": "老照片上色 · 前后对比",
+    "source_case": "hist02_lincoln_colorize",
+    "source": "photo.retouch 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-ba-04-1200x1200.jpg",
+    "role": "A2 修复前后对比图",
+    "title": "破损修复 · 前后对比",
+    "source_case": "pair01_harvesters_ai",
+    "source": "photo.retouch 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-ba-05-1200x1200.jpg",
+    "role": "A2 修复前后对比图",
+    "title": "高清增强 · 前后对比",
+    "source_case": "pair03_great_wave_esrgan",
+    "source": "photo.retouch 真实产出",
+    "license": "素材 PD/CC0"
+  },
+  {
+    "file": "ai-photo-service-01-1200x1200.png",
+    "role": "A3 服务四选图",
+    "source": "图文设计（价格引《定价战术 v0》）"
+  },
+  {
+    "file": "ai-photo-flow-01-1200x1200.png",
+    "role": "A4 流程与时效图",
+    "source": "图文设计（价格引《定价战术 v0》）"
+  },
+  {
+    "file": "ai-photo-compliance-01-1200x1200.png",
+    "role": "A5 合规隐私图",
+    "source": "图文设计（价格引《定价战术 v0》）"
+  },
+  {
+    "file": "ai-photo-price-01-1200x1200.png",
+    "role": "A6 价格套餐图",
+    "source": "图文设计（价格引《定价战术 v0》）"
+  }
+]
