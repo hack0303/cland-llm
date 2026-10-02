@@ -199,9 +199,14 @@ def _skin_mask(im: Image.Image):
 
 
 def _blue_pct(im: Image.Image, mask=None) -> float:
-    r, g, b = (_arr(im)[..., i] for i in range(3))
-    blue = (b > r + 12) & (b > g + 6)
+    """蓝青伪影占比——与 #225 `blue_artifact_pct` 同口径：Lab a/b → sat/hue，
+    sat>18 且 hue∈(-140°,-40°) 记为蓝青（要求饱和度，避开暗部肤色误判）。"""
+    lab = _lab(im)
+    sat = np.hypot(lab[..., 1], lab[..., 2])
+    hue = np.degrees(np.arctan2(lab[..., 2], lab[..., 1]))
+    blue = (sat > 18) & (hue > -140) & (hue < -40)
     if mask is not None:
+        mask = np.asarray(mask).astype(bool)
         if mask.sum() < 50:
             return 0.0
         return float(blue[mask].mean() * 100)
@@ -210,10 +215,11 @@ def _blue_pct(im: Image.Image, mask=None) -> float:
 
 def track_b_metrics(src: Image.Image, pred: Image.Image) -> dict:
     mask, _ = _skin_mask(src)
-    lab = _lab(pred)
-    L = lab[..., 0]
-    ab = np.hypot(lab[..., 1], lab[..., 2])
-    gL, gC = _grad(L), _grad(ab)
+    pred_lab = _lab(pred)
+    ab = np.hypot(pred_lab[..., 1], pred_lab[..., 2])
+    # 结构边缘来自输入 src 的 L（#225 口径：结构=L，色度=输出）
+    gL = _grad(_lab(src)[..., 0])
+    gC = _grad(ab)
     thr = np.percentile(gL, 90)
     edge = gL >= thr
     if edge.sum() > 50 and gC[edge].std() > 1e-6 and gL[edge].std() > 1e-6:
@@ -223,7 +229,7 @@ def track_b_metrics(src: Image.Image, pred: Image.Image) -> dict:
     smooth = gL <= np.percentile(gL, 40)
     bleed = float(gC[smooth].mean() / (gC.mean() + 1e-6))
     l_shift = float(np.mean(np.abs(
-        _lab(src)[..., 0] - _lab(pred)[..., 0])))
+        _lab(src)[..., 0] - pred_lab[..., 0])))
     return {
         "skin_blue_pct": round(_blue_pct(pred, mask), 3),
         "whole_blue_pct": round(_blue_pct(pred), 3),
@@ -338,11 +344,22 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--work-res", type=int, default=512)
     ap.add_argument("--limit", type=int, default=0, help="每轨最多取 N 张（0=全部）")
+    ap.add_argument("--recompute", action="store_true",
+                    help="不跑模型，从已保存 PNG 重算指标并重建汇总")
     args = ap.parse_args()
 
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
     variants = [v for v in args.variants.split(",") if v]
+
+    if args.recompute:
+        rows = recompute_from_disk(outdir, variants, args.work_res, args.track_b_dir)
+        (outdir / "per_image.json").write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_summaries(outdir, rows, variants)
+        print(f"\n[recompute done] {len(rows)} rows -> {outdir}", flush=True)
+        return
+
     sdxl_pipe = ddcolor_pipe = None
     per_image: list[dict] = []
     # 增量合并：同一 (track,image,variant) 的新结果覆盖旧行，避免分次跑互相覆盖
@@ -407,28 +424,33 @@ def main():
     all_rows = list(merged.values())
     (outdir / "per_image.json").write_text(
         json.dumps(all_rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_summaries(outdir, all_rows, variants)
 
-    # 统计 & 汇总
-    for track, a_metrics, b_metrics in [
-        ("A", ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness"], None),
-        ("B", None, ["skin_blue_pct", "whole_blue_pct", "edge_align", "bleed_ratio",
-                     "colorfulness", "L_shift"]),
-    ]:
+    print(f"\n[done] -> {outdir}", flush=True)
+
+
+TRACK_METRICS = {
+    "A": ["psnr", "ssim", "lpips", "dE00", "bw_dE00", "misplace_idx", "colorfulness"],
+    "B": ["skin_blue_pct", "whole_blue_pct", "edge_align", "bleed_ratio",
+          "colorfulness", "L_shift"],
+}
+
+
+def write_summaries(outdir: Path, all_rows: list[dict], variants: list[str]):
+    for track, metrics in TRACK_METRICS.items():
         rows = [r for r in all_rows if r["track"] == track]
         if not rows:
             continue
-        metrics = a_metrics or b_metrics
         present = [v for v in variants if any(r["variant"] == v for r in rows)]
-        summary = {}
-        for v in present:
-            summary[v] = {m: round(float(np.median(
-                [r["metrics"][m] for r in rows if r["variant"] == v])), 3) for m in metrics}
+        summary = {v: {m: round(float(np.median(
+            [r["metrics"][m] for r in rows if r["variant"] == v])), 3) for m in metrics}
+            for v in present}
         base = "sdxl_s080_cfg7" if "sdxl_s080_cfg7" in present else present[0]
         stats = significance_table(rows, metrics, base, present)
         (outdir / f"summary_{track}.json").write_text(json.dumps(
-            {"metrics": metrics, "baseline": base, "medians": summary, "significance": stats},
-            ensure_ascii=False, indent=2), encoding="utf-8")
-        # markdown 表
+            {"metrics": metrics, "baseline": base, "n_images": len({r["image"] for r in rows}),
+             "medians": summary, "significance": stats}, ensure_ascii=False, indent=2),
+            encoding="utf-8")
         lines = [f"# Track {track} 中位数（baseline={base}）", "",
                  "| variant | " + " | ".join(metrics) + " |",
                  "|" + "---|" * (len(metrics) + 1)]
@@ -437,7 +459,38 @@ def main():
         (outdir / f"summary_{track}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("\n".join(lines), flush=True)
 
-    print(f"\n[done] -> {outdir}", flush=True)
+
+def recompute_from_disk(outdir: Path, variants: list[str], work_res: int,
+                        track_b_dir: str | None):
+    """不跑模型，从已保存的 PNG 重算指标（修 bug/改口径后回填）。"""
+    rows: list[dict] = []
+    a_root = outdir / "A"
+    if a_root.exists():
+        for di in sorted(d for d in a_root.iterdir() if d.is_dir()):
+            gt_p, in_p = di / "gt.png", di / "input_gray.png"
+            if not gt_p.exists():
+                continue
+            gt = load_rgb(gt_p)
+            for v in variants:
+                p = di / f"{v}.png"
+                if p.exists():
+                    rows.append({"track": "A", "image": di.name, "variant": v,
+                                 "seconds": None, "metrics": track_a_metrics(gt, load_rgb(p))})
+    b_root = outdir / "B"
+    if b_root.exists() and track_b_dir:
+        srcmap = {p.stem: p for p in Path(track_b_dir).iterdir()
+                  if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}}
+        for di in sorted(d for d in b_root.iterdir() if d.is_dir()):
+            p = srcmap.get(di.name)
+            if not p:
+                continue
+            src = retouch.fit_for_work(load_rgb(p), work_res)
+            for v in variants:
+                pp = di / f"{v}.png"
+                if pp.exists():
+                    rows.append({"track": "B", "image": di.name, "variant": v,
+                                 "seconds": None, "metrics": track_b_metrics(src, load_rgb(pp))})
+    return rows
 
 
 if __name__ == "__main__":
