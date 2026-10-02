@@ -229,22 +229,22 @@ def page(title: str, subtitle: str) -> tuple[Image.Image, ImageDraw.ImageDraw]:
 def gen_service(src: Path, out: Path) -> None:
     canvas, d = page("四项服务 · 一站搞定", "修复 / 上色 / 高清增强 / 电商主图")
     items = [
-        ("老照片修复", "去噪 · 去划痕 · 恢复清晰", "hist01_migrant_mother_repair", (90, 98, 106)),
-        ("黑白照上色", "黑白 → 自然彩色", "hist02_lincoln_colorize", GREEN),
-        ("高清增强", "小图放大 · 更清晰", "hist01_migrant_mother_upscale", (34, 96, 160)),
-        ("电商主图", "去背 · 纯白底 · 自然阴影", "prod01_potpourri_jar", (150, 92, 30)),
+        ("老照片修复", "去噪 · 去划痕 · 恢复清晰", "hist06_lady", (90, 98, 106), 0.12),
+        ("黑白照上色", "黑白 → 自然彩色", "hist02_lincoln_colorize", GREEN, 0.40),
+        ("高清增强", "小图放大 · 更清晰", "hist01_migrant_mother_upscale", (34, 96, 160), 0.20),
+        ("电商主图", "去背 · 纯白底 · 自然阴影", "prod01_potpourri_jar", (150, 92, 30), 0.55),
     ]
     m, gap, top = 48, 30, 258
     tw = (W - m * 2 - gap) // 2
     th = (W - top - m - gap) // 2
-    for i, (name, desc, case, color) in enumerate(items):
+    for i, (name, desc, case, color, fy) in enumerate(items):
         cx = m + (i % 2) * (tw + gap)
         cy = top + (i // 2) * (th + gap)
         box = (cx, cy, cx + tw, cy + th)
         drop_shadow(canvas, box, 18)
         d.rounded_rectangle(box, 18, fill=WHITE)
         im = load_rgb(src / case / "after.png")
-        thumb = rounded(cover(im, tw - 24, th - 132), 10)
+        thumb = rounded(cover_bias(im, tw - 24, th - 132, fy=fy), 10)
         canvas.alpha_composite(thumb, (cx + 12, cy + 12))
         d.rounded_rectangle((cx + 12, cy + th - 120, cx + 12 + 160, cy + th - 120 + 14), 7, fill=color)
         d.text((cx + 30, cy + th - 92), name, font=font(FONT_BOLD, 46), fill=INK)
@@ -380,8 +380,8 @@ BA_GROUPS = [
      "hist01_migrant_mother_repair", 0.30, 0.62),
     ("ai-photo-ba-03-1200x1200.jpg", "老照片上色 · 前后对比", "百年人像 → 自然肤色",
      "hist02_lincoln_colorize", 0.34, 0.60),
-    ("ai-photo-ba-04-1200x1200.jpg", "破损修复 · 前后对比", "破损老照片 → 去划痕白斑 · 清晰还原",
-     "hist03_burnley_repair", 0.42, 0.9),
+    ("ai-photo-ba-04-1200x1200.jpg", "老照片修复 · 前后对比", "去噪 · 清晰化 · 自然还原",
+     "hist06_lady", 0.34, 0.72),
     ("ai-photo-ba-05-1200x1200.jpg", "高清增强 · 前后对比", "低清小图 → 高清细节",
      "hist01_migrant_mother_upscale", 0.30, 0.72),
 ]

@@ -12,7 +12,7 @@
 | `ai-photo-ba-01-1200x1200.jpg` | A2 前后对比 01 | 老照片**上色**（黑白 → 自然彩色） |
 | `ai-photo-ba-02-1200x1200.jpg` | A2 前后对比 02 | 老照片**修复**（去噪/去划痕/恢复清晰） |
 | `ai-photo-ba-03-1200x1200.jpg` | A2 前后对比 03 | 老照片**上色**（百年人像 → 自然肤色） |
-| `ai-photo-ba-04-1200x1200.jpg` | A2 前后对比 04 | **破损修复**（降质减损 → 清晰还原） |
+| `ai-photo-ba-04-1200x1200.jpg` | A2 前后对比 04 | **老照片修复**（去噪/清晰化 → 自然还原） |
 | `ai-photo-ba-05-1200x1200.jpg` | A2 前后对比 05 | **高清增强**（低清小图 → 高清细节） |
 | `ai-photo-service-01-1200x1200.png` | A3 服务四选图 | 修复 / 上色 / 高清增强 / 电商主图 |
 | `ai-photo-flow-01-1200x1200.png` | A4 流程与时效图 | 下单→发照片→AI 制作→回传；标准 24h / 加急 2h |
@@ -31,7 +31,7 @@
 | main / ba-01 | `hist01_migrant_mother_colorize` | colorize (DDColor) | Dorothea Lange《Migrant Mother》1936 · **PD** |
 | ba-02 | `hist01_migrant_mother_repair` | repair | 同上 · **PD** |
 | ba-03 | `hist02_lincoln_colorize` | colorize (DDColor) | Lincoln 1863 肖像 · **PD** |
-| ba-04 | `hist03_burnley_repair` | repair (damage-fix) | Private John Burnley WW1 肖像 · **PD** |
+| ba-04 | `hist06_lady` | repair | 维多利亚女士老照片肖像 · **PD** |
 | ba-05 | `hist01_migrant_mother_upscale` | upscale | Dorothea Lange 1936（**干净降采样低清输入 → 超分**）· **PD** |
 
 - 所有 A1/A2 图内已标 **「公有领域素材演示」** + **「AI 技术制作」**。
@@ -60,6 +60,6 @@ python3 inference/photo/marketing.py \
 
 - 不承诺 100% 还原（图内注明）。
 - **上色引擎（#225）**：main/ba-01/ba-03 与 service 上色面板改用 **DDColor-L** 出色 + `chroma_transfer` 保原图亮度/质感（**不套 skin_fix**），消除旧链路（SDXL strength=0.80）的手臂/衣物蓝块串色；详见 `docs/photo-colorize-offset-225.md`。
-- **ba-04**：改用**真实老照片**（WW1 肖像，PD）演示破损修复（去划痕/白斑 + 修复），替换原油画对拍图。
+- **ba-04**：改用**真实老照片** `hist06_lady`（维多利亚女士肖像，PD）演示**老照片修复**（repair 模式；未跑 damage-fix，故**不宣称「去划痕」**，文案用「去噪 · 清晰化 · 自然还原」）。
 
-— sage（ai_engineer）· v2 · 2026-10-02（#224 重出 4 件：main-01 / ba-01 / service-01 / ba-04）
+— sage（ai_engineer）· v3 · 2026-10-03（#224 最终包 sha 对齐：service-01/ba-04 入库；ba-04 → hist06_lady，文案弱化「去划痕」）
