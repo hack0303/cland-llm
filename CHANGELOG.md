@@ -4,6 +4,14 @@ description: record your changes
 
 # Changelog
 
+## 20261002
+
+### Changes
+
+- 推理/修图（#179 收尾）：colorize 新增**脸/手臂肤色色偏修复**——`build_skin_mask()` 用 DWPose（已有人脸 68 点+双手+肘腕关键点，CPU onnxruntime）生成脸/手/前臂/颈软掩膜（眼部挖洞+羽化）；`fix_skin_color_cast()` 在 LAB 内把掩膜内色相异常像素（天然肤色窗口 22°–72° 之外，如蓝色手部）拉回暖肤色 43°、饱和度夹取 5–10，亮度纹理不动；逐案例开关 `skin_fix`（CLI `--skin-fix` / manifest 字段），并输出 `skin_zoom.png`（修复前/后面部放大证据）
+- 评估/总览：`owner_overview.png` 改版——正文只放**交付样例**（老照片 hist / 电商 prod），对拍集（pair*）单列**「评测附录（内部回归基线，有 GT 算 PSNR/SSIM，非交付样例）」**，避免用途混淆
+- 实测（hist01_migrant_mother_colorize）：蓝色手部/青色眼周伪影消除，整体色彩度 19.5→19.0（−2.6%，≤±20%），5 维评分无回退；仅 hist01 开 `skin_fix`，其余 10 例 sha256 逐字节不变
+
 ## 20261001
 
 ### Changes

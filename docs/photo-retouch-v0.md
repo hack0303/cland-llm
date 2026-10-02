@@ -139,7 +139,7 @@ python3 inference/photo/evaluate.py --run <OUT>/run.json --overview <OUT>/owner_
 | pair02_wheat_field_colorize | 1182 | 0.0 | 57.7 | 1* | 5 | 4.2 | 5 | 3.4 |
 | pair03_great_wave_ai | 3173 | 0.0 | 34.5 | 1* | 5 | 4.4 | 5 | 3.5 |
 | pair03_great_wave_esrgan | 851 | 0.0 | 33.2 | 3* | 5 | 4.3 | 5 | 4.7 |
-| hist01_migrant_mother_colorize | 345 | — | 19.5 | 5.0 | 5 | 3 | 5 | 4.6 |
+| hist01_migrant_mother_colorize | 345 | — | 19.0 | 5.0 | 5 | 3 | 5 | 4.6 |
 | hist01_migrant_mother_repair | 321 | — | 0.0 | 4.0 | 5 | 1 | 5 | 3.9 |
 | hist02_lincoln_colorize | 228 | — | 11.5 | 4.0 | 5 | 2 | 5 | 4.0 |
 | prod01_potpourri_jar | 2051 | — | 17.3 | 2* | 4 | 3 | 5 | 3.3 |
@@ -148,6 +148,33 @@ python3 inference/photo/evaluate.py --run <OUT>/run.json --overview <OUT>/owner_
 
 > `*` 评分说明：**修复自然度**按 SSIM 分档（对拍集）——`repair` 因主动重绘天然低分、`upscale` 高分，这是"保真 vs 观感"的取舍而非质量缺陷；商品图输入本身干净（无噪声可去、无 GT），该维度不适用（2 分为指标口径产物）。**商用可用度** = 0.35×修复+0.25×细节+0.2×干净+0.2×色彩（长边≥1600 加 0.5）。
 > 评分为**代理评分**（本地无视觉大模型，评分脚本 = `evaluate.py`），最终以 Owner 目测为准；本报告已附全部对比图。
+
+### 5.3 上色色偏修复（hist01_colorize · #179 收尾）
+
+**问题**（Owner 2026-10-02 判定）：`hist01_migrant_mother_colorize` 人物黑白照上色后，**脸/手臂有色偏伪影**（手部被误上成蓝灰、眼周/颈部泛青）。根因：SDXL 上色的色度（a/b）被 `chroma_transfer` 原样采纳，模型把靠近蓝色毛衣的手部也预测成蓝色，且肤色饱和度整体偏低。
+
+**修复**（`retouch.py`：`build_skin_mask()` + `fix_skin_color_cast()`，colorize 后处理，逐案例开关 `skin_fix`）：
+1. **面部/手/前臂掩膜**：DWPose（已有的 `inference/sdxl/hand_pipe/dwpose.py`，CPU onnxruntime，不占 GPU）给出 68 点人脸 + 双手 + 肘/腕关键点，取凸包并生成：脸 + 双手 + 前臂（裸皮段）+ 颈/前胸条带；**眼部挖洞**避免眼白/虹膜被染色；膨胀+高斯羽化避免接缝。
+2. **局部色偏抑制**：在 LAB 色度平面内，把掩膜内**色相异常**（落在天然肤色窗口 22°–72° 之外，如蓝色手部 -90°）的像素拉回暖肤色色相（43°），并把饱和度夹取到 5–10；色相正常的像素保持（保留脸颊自然红润）。亮度/纹理完全不动。
+3. **验收证据图**：开关开启时额外输出 `<case>/skin_zoom.png`（修复前/后**面部放大**并排）。
+
+**效果（hist01_colorize，修复前 → 后）**：
+
+| 指标 | 修复前 | 修复后 | 判据 |
+|---|---|---|---|
+| 整体色彩度（colorfulness） | 19.5 | **19.0**（−2.6%） | 变化 ≤ ±20% ✅ |
+| 面部/手部蓝色色偏 | 手部 b≈−14（蓝）、眼周青 | 手/脸暖肤色，无色偏块 | 肤色自然无色偏 ✅ |
+| 肤色色相异常像素占比 | — | 54.4% 掩膜像素被拉回（`skin_cast_fixed_pct`） | — |
+| 5 维评分（代理） | 修复自然度 5.0 / 色彩 3 / 商用 4.6 | **不变** | 无回退 ✅ |
+| 原图 sha256（after） | a9fd8d0f… | **025eb220…** | 仅 hist01 变 |
+
+**边界（已遵守）**：本修复**仅对 `hist01_migrant_mother_colorize` 开启**（`cases.json` 逐案例 `skin_fix:true`），老照片主线其余 pass 例（`pair02/pair03/hist01_repair/hist02`）与商品线（`prod01-03`）输出**逐字节不变**（sha256 复验一致）。
+
+**已知限制**：掩膜依赖 DWPose 检出人物；色相/饱和度目标为**浅肤色**调参，对深肤色人物可能偏保守（后续可按面部参考自适应）。
+
+### 5.4 pair01 用途说明（#179 收尾口径）
+
+`pair01/02/03` 是**内部评测对拍集**（对公有领域图人工退化，**有 GT 可算 PSNR/SSIM**），**不是交付样例**。因此 `owner_overview.png` 已改版：正文只放**交付样例**（老照片 `hist` / 电商 `prod`，共 6 例），对拍集单列 **「评测附录（对拍集 pair · 内部回归基线，有 GT 算 PSNR/SSIM，非交付样例）」（5 例），避免再次"不知道做什么用的"。
 
 ## 6. 关键实验记录（为什么是这套参数）
 
@@ -203,6 +230,7 @@ python3 inference/photo/retouch.py \
 |---|---|
 | 代码 | `inference/photo/{retouch.py, upscale.py, degrade.py, evaluate.py, tools/fetch_assets.py}` |
 | 输出（11 案例 + 报告数据） | `/mnt/data/ai_workspace/outputs/photo-retouch/{<case>/..., run.json, metrics.json, owner_overview.png}` |
+| 上色色偏修复证据（面部放大） | `/mnt/data/ai_workspace/outputs/photo-retouch/hist01_migrant_mother_colorize/skin_zoom.png` |
 | 素材与许可 | `/mnt/data/ai_workspace/outputs/photo-retouch/materials/{manifest.json, pairs/, historical/, products/, cases.json}` |
 | 目录验收复跑 | `/mnt/data/ai_workspace/outputs/photo-retouch-dir/` |
 | workflow | `alice-workflow-hub/workflows/photo-retouch.yaml`（id `photo.retouch`，已校验） |

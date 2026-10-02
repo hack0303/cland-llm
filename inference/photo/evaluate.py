@@ -125,41 +125,63 @@ def _font(path: str, size: int):
         return ImageFont.load_default()
 
 
-def build_overview(cases: list[dict], out_path: Path, width: int = 760) -> None:
+def _render_section(items: list[dict], width: int, cols: int, title: str) -> Image.Image | None:
+    """把一个分区（交付样例 / 评测附录）渲染成网格图。"""
     thumbs = []
-    for m in cases:
-        if m["status"] != "done":
-            continue
-        p = Path(m["outputs"]["compare"])
-        im = Image.open(p).convert("RGB")
+    for m in items:
+        im = Image.open(m["outputs"]["compare"]).convert("RGB")
         s = width / im.width
         im = im.resize((width, int(im.height * s)), Image.LANCZOS)
-        thumbs.append((m["case"], im))
+        thumbs.append((m["case"], im, m))
     if not thumbs:
-        return
-    cols = 2
+        return None
     rows = (len(thumbs) + cols - 1) // cols
     col_w = width + 24
-    row_h = max(t.height for _, t in thumbs) + 76
-    canvas = Image.new("RGB", (cols * col_w + 24, rows * row_h + 16), (250, 250, 250))
+    row_h = max(t.height for _, t, _ in thumbs) + 76
+    canvas = Image.new("RGB", (cols * col_w + 24, rows * row_h + 70), (250, 250, 250))
     d = ImageDraw.Draw(canvas)
     fb = _font(FONT_BOLD, 30)
     fr = _font(FONT_REGULAR, 22)
-    title = _font(FONT_BOLD, 38)
-    d.text((24, 12), "AI 修图产线 v0 — Owner 总览（上：输入 / 下：输出）", font=title, fill=(20, 20, 20))
-    y0 = 84
-    for i, (name, im) in enumerate(thumbs):
+    d.text((24, 16), title, font=_font(FONT_BOLD, 34), fill=(20, 20, 20))
+    y0 = 64
+    for i, (name, im, m) in enumerate(thumbs):
         r, c = divmod(i, cols)
         x = 24 + c * col_w
         y = y0 + r * row_h
         d.text((x, y), name, font=fb, fill=(0, 80, 160))
         canvas.paste(im, (x, y + 42))
-        sub = next((m for m in cases if m["case"] == name), {})
-        st = sub.get("timings", {}).get("total")
-        d.text((x + 12, y + 46 + im.height), f"total {st}s  ·  {sub.get('mode')}", font=fr, fill=(100, 100, 100))
+        st = m.get("timings", {}).get("total")
+        d.text((x + 12, y + 46 + im.height), f"total {st}s  ·  {m.get('mode')}", font=fr, fill=(100, 100, 100))
+    return canvas
+
+
+def build_overview(cases: list[dict], out_path: Path, width: int = 760) -> None:
+    """Owner 总览：**只把交付样例放正文**（老照片 hist / 电商 prod）；对拍集（pair*）
+    单列「评测附录」并标注用途（内部回归基线，非交付样例）。"""
+    done = [m for m in cases if m["status"] == "done"]
+    delivery = [m for m in done if not m["case"].startswith("pair")]
+    pairs = [m for m in done if m["case"].startswith("pair")]
+    sections = [
+        ("交付样例（老照片 hist / 电商 prod）", delivery),
+        ("评测附录（对拍集 pair · 内部回归基线，有 GT 算 PSNR/SSIM，非交付样例）", pairs),
+    ]
+    imgs = [img for img in (_render_section(items, width, 2, t) for t, items in sections) if img]
+    if not imgs:
+        return
+    gap = 24
+    W = max(i.width for i in imgs)
+    H = sum(i.height for i in imgs) + gap * (len(imgs) - 1) + 62
+    canvas = Image.new("RGB", (W, H), (250, 250, 250))
+    d = ImageDraw.Draw(canvas)
+    d.text((24, 14), "AI 修图产线 v0 — Owner 总览（上：输入 / 下：输出）",
+           font=_font(FONT_BOLD, 38), fill=(20, 20, 20))
+    y = 62
+    for img in imgs:
+        canvas.paste(img, (0, y))
+        y += img.height + gap
     out_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out_path)
-    print(f"[overview] {len(thumbs)} cases -> {out_path}")
+    print(f"[overview] 交付 {len(delivery)} + 评测附录 {len(pairs)} -> {out_path}")
 
 
 # ------------------------------------------------------------------ main

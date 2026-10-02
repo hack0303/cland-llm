@@ -134,6 +134,143 @@ def chroma_transfer(color_img: Image.Image, base_img: Image.Image, strength: flo
     return Image.fromarray(cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_LAB2RGB))
 
 
+# ---- 肤色色偏修复（colorize 后处理）参数（针对褪色黑白老照片上色的脸/手臂伪影） ----
+SKIN_HUE_RANGE = (22.0, 72.0)   # 判定“天然肤色”的 LAB 色相窗口（度）
+SKIN_TARGET_HUE = 43.0          # 色偏像素强制拉回的暖肤色色相
+SKIN_SAT_RANGE = (5.0, 10.0)    # 肤色 LAB 色度（饱和度）夹取区间
+
+_dwpose_cache: tuple | None = None
+
+
+def _get_dwpose():
+    """惰性加载 DWPose（CPU onnxruntime）；不可用时返回 None。"""
+    global _dwpose_cache
+    if _dwpose_cache is None:
+        hp = Path(__file__).resolve().parent.parent / "sdxl" / "hand_pipe"
+        sys.path.insert(0, str(hp))
+        from dwpose import DWPose, LEFT_HAND, RIGHT_HAND  # noqa: E402
+        _dwpose_cache = (DWPose(), LEFT_HAND, RIGHT_HAND)
+    return _dwpose_cache
+
+
+def build_skin_mask(im: Image.Image) -> tuple[np.ndarray | None, list[int] | None]:
+    """基于 DWPose 关键点（脸/手/前臂）生成软肤色掩膜（0..1）；不可用返回 (None, None)。
+    眼睛区域挖洞，避免眼白/虹膜被当成肤色染色。第二个返回值为人脸 bbox [x1,y1,x2,y2]（供证据图裁剪）。"""
+    import cv2
+    try:
+        d, left_hand, right_hand = _get_dwpose()
+    except Exception as e:  # noqa: BLE001
+        print(f"[skin] DWPose 不可用，跳过肤色修复: {e}", flush=True)
+        return None, None
+    rgb = np.asarray(im.convert("RGB"))
+    h, w = rgb.shape[:2]
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    try:
+        persons = d.detect_full(bgr)
+    except Exception as e:  # noqa: BLE001
+        print(f"[skin] DWPose 推理失败: {e}", flush=True)
+        return None, None
+    if not persons:
+        return None, None
+    p = max(persons, key=lambda q: q["bbox"][4])
+    k = p["kps"]
+    face_pts = [(int(x), int(y)) for x, y, c in k[23:91] if c > 0.3]
+    face_box = ([min(p[0] for p in face_pts), min(p[1] for p in face_pts),
+                 max(p[0] for p in face_pts), max(p[1] for p in face_pts)] if face_pts else None)
+    mask = np.zeros((h, w), np.uint8)
+
+    def poly(pts, conf: float = 0.3):
+        pts = [(int(x), int(y)) for x, y, c in pts if c > conf]
+        if len(pts) >= 3:
+            cv2.fillConvexPoly(mask, cv2.convexHull(np.array(pts, np.int32)), 255)
+
+    def limb(p1, p2, r1: int, r2: int):
+        p1 = np.asarray(p1, float)
+        p2 = np.asarray(p2, float)
+        n = max(2, int(np.linalg.norm(p2 - p1)) // 4)
+        for t in np.linspace(0, 1, n):
+            cv2.circle(mask, tuple(np.round(p1 + (p2 - p1) * t).astype(int)),
+                       int(r1 * (1 - t) + r2 * t), 255, -1)
+
+    poly(k[23:91])                      # 脸（COCO-WholeBody face 68 点）
+    poly(k[left_hand])                  # 左手
+    poly(k[right_hand])                 # 右手
+    for e, wr in ((7, 9), (8, 10)):     # 前臂（肘→腕，裸露段）
+        if k[e, 2] > 0.3 and k[wr, 2] > 0.3:
+            limb(k[e, :2], k[wr, :2], 30, 24)
+    if k[5, 2] > 0.3 and k[6, 2] > 0.3:  # 颈/前胸（下巴→双肩中点）
+        limb(k[23:91][:, :2].mean(0), (k[5, :2] + k[6, :2]) / 2, 34, 30)
+    eye = np.zeros((h, w), np.uint8)
+    for base in (36, 42):               # 68 点眼周 36-41/42-47 → +23
+        pts = k[23 + base: 23 + base + 6, :2].astype(np.int32)
+        cv2.fillConvexPoly(eye, cv2.convexHull(pts), 255)
+    mask[cv2.dilate(eye, np.ones((7, 7), np.uint8), 1) > 0] = 0
+    mask = cv2.dilate(mask, np.ones((15, 15), np.uint8), 1)
+    mask = cv2.GaussianBlur(mask, (21, 21), 0)
+    return mask.astype(np.float32) / 255.0, face_box
+
+
+def fix_skin_color_cast(im: Image.Image, mask: np.ndarray | None = None) -> tuple[Image.Image, dict]:
+    """抑制上色结果中脸/手臂区域的局部色偏伪影（蓝/青/洋红色块）。
+    思路：在肤色掩膜内，把色相异常的像素拉回暖肤色（保持亮度/纹理），并夹取饱和度；掩膜外不动。"""
+    import cv2
+    face_box = None
+    if mask is None:
+        mask, face_box = build_skin_mask(im)
+    if mask is None or float(mask.max()) < 0.05:
+        return im, {"skin_fix": False}
+    rgb = np.asarray(im.convert("RGB")).astype(np.uint8)
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    a = lab[..., 1] - 128.0
+    b = lab[..., 2] - 128.0
+    sat = np.hypot(a, b)
+    hue = np.degrees(np.arctan2(b, a))
+    lo, hi = SKIN_HUE_RANGE
+    warm = (hue >= lo) & (hue <= hi)
+    hue2 = np.where(warm, hue, SKIN_TARGET_HUE)
+    sat2 = np.clip(sat, *SKIN_SAT_RANGE)
+    a2 = sat2 * np.cos(np.radians(hue2))
+    b2 = sat2 * np.sin(np.radians(hue2))
+    m = mask
+    lab[..., 1] = lab[..., 1] * (1 - m) + (a2 + 128) * m
+    lab[..., 2] = lab[..., 2] * (1 - m) + (b2 + 128) * m
+    out = Image.fromarray(cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB))
+    skin_px = int((m > 0.5).sum())
+    cast_pct = float(((~warm) & (m > 0.5)).sum()) / max(1, skin_px) * 100
+    return out, {"skin_fix": True, "skin_area_pct": round(float((m > 0.5).mean() * 100), 2),
+                 "skin_cast_fixed_pct": round(cast_pct, 2), "face_box": face_box}
+
+
+def compose_skin_zoom(before: Image.Image, after: Image.Image, face_box: list[int] | None,
+                      out_path: str | Path, panel_w: int = 460) -> bool:
+    """生成「修复前/后」面部放大对照图（供验收佐证）。face_box=[x1,y1,x2,y2]（同一坐标系）。"""
+    if not face_box:
+        return False
+    x1, y1, x2, y2 = face_box
+    w, h = before.size
+    fw, fh = x2 - x1, y2 - y1
+    bx1, by1 = max(0, int(x1 - fw * 0.55)), max(0, int(y1 - fh * 0.55))
+    bx2, by2 = min(w, int(x2 + fw * 0.55)), min(h, int(y2 + fh * 0.75))
+    b, a = before.crop((bx1, by1, bx2, by2)), after.crop((bx1, by1, bx2, by2))
+
+    def fit(im: Image.Image) -> Image.Image:
+        s = panel_w / im.width
+        return im.resize((panel_w, max(1, int(im.height * s))), Image.LANCZOS)
+
+    b, a = fit(b), fit(a)
+    gap, margin, top, bottom = 18, 20, 50, 14
+    canvas = Image.new("RGB", (margin * 2 + b.width + gap + a.width, top + b.height + bottom), (246, 246, 246))
+    d = ImageDraw.Draw(canvas)
+    d.text((margin, 12), "修复前（AI 原上色 · 色偏）", font=_font(FONT_BOLD, 24), fill=(180, 30, 30))
+    d.text((margin + b.width + gap, 12), "修复后（肤色色偏修复）", font=_font(FONT_BOLD, 24), fill=(0, 110, 60))
+    canvas.paste(b, (margin, top))
+    canvas.paste(a, (margin + b.width + gap, top))
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    return True
+
+
 def clean_white_bg(im: Image.Image, thresh: int = 240) -> Image.Image:
     """商品图收尾：把与图像边缘连通的近白区域刷成纯白（保留被产品包围的高光）。"""
     import cv2
@@ -273,6 +410,7 @@ def load_cases(args) -> list[dict]:
                 "note": c.get("note", ""),
                 "prompt": c.get("prompt"),
                 "negative": c.get("negative"),
+                "skin_fix": c.get("skin_fix"),
                 "case_seed": c.get("seed", args.seed),
             })
         return cases
@@ -284,7 +422,7 @@ def load_cases(args) -> list[dict]:
     return [{"name": p.stem, "input": str(p), "mode": args.mode,
              "strength": args.strength, "steps": args.steps, "guidance": args.guidance,
              "gt": None, "note": "", "prompt": None, "negative": None,
-             "case_seed": args.seed} for p in files]
+             "skin_fix": None, "case_seed": args.seed} for p in files]
 
 
 def main():
@@ -300,6 +438,8 @@ def main():
     ap.add_argument("--max-side", type=int, default=2048, help="ESRGAN 输出长边上限")
     ap.add_argument("--steps", type=int, default=80, help="SDXL 总步数（实际步数 = int(steps*strength)）")
     ap.add_argument("--guidance", type=float, default=None, help="CFG（默认按 mode：colorize 7.0 其余 4.5）")
+    ap.add_argument("--skin-fix", action="store_true",
+                    help="colorize 后处理启用脸/手臂肤色色偏修复（默认关；也可在 manifest 逐案例 skin_fix）")
     ap.add_argument("--esrgan", default="realesrgan", choices=["realesrgan", "ultrasharp"])
     ap.add_argument("--esrgan-in-cap", type=int, default=1280,
                     help="ESRGAN 输入长边上限（x4 输出数组内存保护，默认 1280）")
@@ -330,6 +470,7 @@ def main():
              "gt": c.get("gt"), "note": c.get("note", ""), "strength": c["strength"],
              "steps": c["steps"], "guidance": c["guidance"],
              "prompt": c.get("prompt"), "negative": c.get("negative"),
+             "skin_fix": c.get("skin_fix"),
              "seed": c["case_seed"], "status": "pending", "timings": {}, "sizes": {}, "outputs": {}}
         t0 = time.time()
         try:
@@ -417,11 +558,20 @@ def main():
             after = m.pop("_out")
             before = m.pop("_orig")
             work = m.get("_work")
+            skin_zoom_src = None
             if m["mode"] == "product":
                 after = clean_white_bg(after)
             elif m["mode"] == "colorize" and work is not None:
                 # AI 上色结果只取色度，亮度沿用修复后原图（保脸/保结构）
                 after = chroma_transfer(after, work, strength=1.0)
+                # 脸/手臂肤色色偏伪影修复（面部掩膜 + 局部色偏抑制）
+                enable_skin = m.get("skin_fix")
+                if enable_skin is None:
+                    enable_skin = args.skin_fix
+                if enable_skin:
+                    skin_zoom_src = after.copy()
+                    after, skin_info = fix_skin_color_cast(after)
+                    m.update(skin_info)
             elif m["mode"] == "repair":
                 # 黑白老照片保持黑白（修复不加色；上色请用 colorize 模式）
                 barr = np.asarray(before, np.float32)
@@ -446,6 +596,10 @@ def main():
                             "after": str(case_dir / "after.png"),
                             "compare": str(case_dir / "compare.png"),
                             "sha256_after": sha256_file(case_dir / "after.png")}
+            if skin_zoom_src is not None:
+                zoom_path = case_dir / "skin_zoom.png"
+                if compose_skin_zoom(skin_zoom_src, after, m.get("face_box"), zoom_path):
+                    m["outputs"]["skin_zoom"] = str(zoom_path)
             (case_dir / "meta.json").write_text(json.dumps(m, ensure_ascii=False, indent=2),
                                                 encoding="utf-8")
             print(f"[done] {m['case']}: {m['timings']['total']}s -> {case_dir}/compare.png", flush=True)
