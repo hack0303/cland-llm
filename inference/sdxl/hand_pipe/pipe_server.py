@@ -23,6 +23,8 @@ from rrdbnet import RealESRGANUpscaler
 
 BASE_DIR = "/mnt/data/ai_workspace/models"
 CN_DIR = f"{BASE_DIR}/sdxl_controlnet"
+# 设备可配（#323）：默认 GPU1；可用 HAND_PIPE_DEVICE 覆盖（避免写死与 Gemma 冲突）
+DEVICE = os.environ.get("HAND_PIPE_DEVICE", "cuda:1")
 OUT_DIR = "/mnt/data/ai_workspace/outputs/hand_pipe"
 
 # 8bit 量化配置（diffusers 0.39 PipelineQuantizationConfig API）
@@ -107,7 +109,7 @@ def load_cn(name):
     cn = ControlNetModel.from_pretrained(f"{CN_DIR}/{name}",
                                          torch_dtype=torch.float16,
                                          use_safetensors=True)
-    cn = cn.to("cuda:1")
+    cn = cn.to(DEVICE)
     mc = MultiControlNetModel([cn])
     if "cn_pipe" in PIPE:
         old_pipe = PIPE.pop("cn_pipe")
@@ -121,7 +123,7 @@ def load_cn(name):
         f"{BASE_DIR}/stable-diffusion-xl-base-1.0", controlnet=mc,
         torch_dtype=torch.float16,
         quantization_config=Q8, use_safetensors=True)
-    cn_pipe = cn_pipe.to("cuda:1")
+    cn_pipe = cn_pipe.to(DEVICE)
     cn_pipe.enable_attention_slicing()
     PIPE["cn_pipe"] = cn_pipe
     PIPE["cn_names"] = [name]
@@ -131,12 +133,12 @@ def load_cn(name):
 @app.on_event("startup")
 def load_all():
     t0 = time.time()
-    torch.cuda.set_device(1)  # GPU1
+    torch.cuda.set_device(torch.device(DEVICE))
     print("[*] Loading SDXL base (8bit) ...", flush=True)
     base = StableDiffusionXLPipeline.from_pretrained(
         f"{BASE_DIR}/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16,
         quantization_config=Q8, use_safetensors=True)
-    base = base.to("cuda:1")
+    base = base.to(DEVICE)
     base.enable_attention_slicing()
     base.enable_vae_slicing()
     PIPE["base"] = base
@@ -145,13 +147,13 @@ def load_all():
     cn = ControlNetModel.from_pretrained(f"{CN_DIR}/openpose",
                                          torch_dtype=torch.float16,
                                          use_safetensors=True)
-    cn = cn.to("cuda:1")
+    cn = cn.to(DEVICE)
     mc = MultiControlNetModel([cn])  # 显式包装，绕过 from_pretrained 的 list 处理
     cn_pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
         f"{BASE_DIR}/stable-diffusion-xl-base-1.0", controlnet=mc,
         torch_dtype=torch.float16,
         quantization_config=Q8, use_safetensors=True)
-    cn_pipe = cn_pipe.to("cuda:1")
+    cn_pipe = cn_pipe.to(DEVICE)
     cn_pipe.enable_attention_slicing()
     PIPE["cn_pipe"] = cn_pipe
     PIPE["cn_names"] = ["openpose"]  # depth/canny 懒加载
@@ -160,7 +162,7 @@ def load_all():
     inp = StableDiffusionXLInpaintPipeline.from_pretrained(
         f"{BASE_DIR}/sdxl-inpaint", torch_dtype=torch.float16,
         quantization_config=Q8_INP, use_safetensors=True)
-    inp = inp.to("cuda:1")
+    inp = inp.to(DEVICE)
     inp.enable_attention_slicing()
     inp.enable_vae_slicing()
     PIPE["inpaint"] = inp
@@ -168,8 +170,8 @@ def load_all():
     print("[*] Loading DWPose + ESRGAN ...", flush=True)
     PIPE["dwpose"] = DWPose()
     PIPE["esrgan"] = {
-        "ultrasharp": RealESRGANUpscaler(f"{BASE_DIR}/upscale/4x-UltraSharp.pth", "cuda:1"),
-        "esrgan": RealESRGANUpscaler(f"{BASE_DIR}/upscale/RealESRGAN_x4plus.pth", "cuda:1"),
+        "ultrasharp": RealESRGANUpscaler(f"{BASE_DIR}/upscale/4x-UltraSharp.pth", DEVICE),
+        "esrgan": RealESRGANUpscaler(f"{BASE_DIR}/upscale/RealESRGAN_x4plus.pth", DEVICE),
     }
     print(f"[*] All loaded in {time.time()-t0:.0f}s", flush=True)
 
