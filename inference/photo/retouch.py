@@ -571,6 +571,8 @@ def main():
                     help="colorize 后处理启用脸/手臂肤色色偏修复（默认关；也可在 manifest 逐案例 skin_fix）")
     ap.add_argument("--damage-fix", action="store_true",
                     help="repair 预处理启用去划痕/去白斑/去霉点（形态学检测 + inpaint；也可在 manifest 逐案例 damage_fix）")
+    ap.add_argument("--chroma-strength", type=float, default=1.0,
+                    help="colorize 色度强度（默认 1.0=全采纳 DDColor；0.7~0.85 可压住模型过度饱和/臆造色块）")
     ap.add_argument("--chroma-smooth", type=int, default=3,
                     help="colorize 色度中值滤波核（奇数，默认 3；0=关）——压色度噪点，防彩虹条带")
     ap.add_argument("--flat-damp", type=float, default=1.0,
@@ -711,7 +713,7 @@ def main():
                 # 基底默认取 ESRGAN 超分图（--color-base up）：色度是低频信息，从 work 分辨率上采样足够，
                 # 亮度用 up 图 => 成品保留 max-side 细节，不再退回 work-res（1024）。
                 base = m.get("_up") if args.color_base == "up" else work
-                after = chroma_transfer(after, base if base is not None else work, strength=1.0,
+                after = chroma_transfer(after, base if base is not None else work, strength=args.chroma_strength,
                                         smooth=args.chroma_smooth, flat_damp=args.flat_damp)
                 # 脸/手臂肤色色偏伪影修复（面部掩膜 + 局部色偏抑制）
                 enable_skin = m.get("skin_fix")
