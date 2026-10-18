@@ -4,6 +4,11 @@ description: record your changes
 
 # Changelog
 
+## 20261018
+
+### Changes
+- 修图/上色（base/cland-ai#2 实单驱动，v0.2）：`retouch.py` colorize 两处修复——①新增 `--color-base up|work`（**默认 up**）：成品亮度基底改取 ESRGAN 超分图，色度（低频）从 DDColor 上采样铺上去，**成品长边不再退回 work-res**（3513×2397 输入：1024×688 → 2048×1396）；②`chroma_transfer()` 新增 `--chroma-smooth`（色度原生分辨率中值滤波，默认 3）+ `--flat-damp`（明亮低纹理区色度抑制，默认 1.0）：雪景天空平均色度 8.4→0.0、白墙 12.9→9.6，人脸/肤色 ROI 逐项差 ≤0.3（无回归）。2 张实单 28.6s，失败率 0%。说明与局限见 `docs/photo-colorize-v02-20261018.md`；回滚=`--color-base work --chroma-smooth 0 --flat-damp 0`
+
 ## 20261002
 
 ### Changes

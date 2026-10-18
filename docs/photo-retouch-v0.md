@@ -52,6 +52,9 @@ updated: "2026-10-01"
 | `--batch` | 1 | 同模式组批送 SDXL（P40 无 Tensor Core，批>1 无加速收益，默认 1） |
 | `--steps / --guidance` | 80 / 按 mode（colorize 7.0，其余 4.5） | 总步数；小步长（80×strength）显著保结构 |
 | `--work-res / --max-side` | 1024 / 2048 | SDXL 工作分辨率长边 / ESRGAN 输出长边上限 |
+| `--color-base` | up | **v0.2** colorize 成品亮度基底：`up`=ESRGAN 超分图（成品长边 = `--max-side`，保留细节）/ `work`=v0.1 旧口径（成品长边 = `--work-res`） |
+| `--chroma-smooth` | 3 | **v0.2** colorize 色度中值滤波核（原生分辨率，0=关）：压色度噪点/彩虹条带 |
+| `--flat-damp` | 1.0 | **v0.2** 明亮低纹理区（天空/雪/白布）色度向中性回拉强度（0=关）：消紫/品红色块 |
 | `--esrgan / --esrgan-in-cap` | realesrgan / 1280 | 超分权重（另有 ultrasharp）；x4 输入长边内存保护 |
 
 **关键设计**（经 3 轮参数对照实测，见 §6）：
@@ -59,6 +62,7 @@ updated: "2026-10-01"
 2. **上色 = 大强度重绘 + 色度迁移**：色度来自 AI（0.8 强度重绘），亮度沿用修复后原图（LAB L 通道）→ 上色不毁脸不漂结构；
    ⚠️ **#225 实测：SDXL strength=0.80 会在手臂/衣物生成蓝块串色** → 老照片上色改用 **DDColor-L（`--colorizer ddcolor`）**，或 SDXL 降 to `strength 0.35–0.45`（色彩变淡）。详见 `docs/photo-colorize-offset-225.md`；
 3. **黑白修复保持黑白**：repair 模式检测灰度输入后回转 L 模式（上色请走 colorize）。
+4. **（v0.2，2026-10-18）上色成品不再退回 work 分辨率**：色度从 DDColor（512/1024 口径）上采样铺到 ESRGAN 超分亮度上，成品长边 = `--max-side`；同时压明亮低纹理区的无依据补色。实测与局限见 `docs/photo-colorize-v02-20261018.md`。
 
 ## 3. 素材（仅公有领域 / CC0）
 
@@ -238,6 +242,7 @@ python3 inference/photo/retouch.py \
 3. **商品白底为规则法**：连通域刷白 + 白点归一，未做抠图/阴影重打光；纯白产品高光存在被刷白风险（本轮 3 案例未触发）。
 4. **对拍集 GT 为绘画**：PD 真实老照片没有彩色 GT，故合成对拍集用 Met CC0 高清画作（细节/色彩丰富，适合度量）；真实老照片只做定性样例。
 5. **无视觉大模型评分**：5 维评分为脚本代理分，Owner 目测后校准。
+6. **（v0.2 遗留）上色颜色仍是推测**：无真实色彩 GT，DDColor 可能给沙发/布帘猜错颜色；`--flat-damp` 只治明亮均质区的伪影，细纹理彩虹条带仅减轻未根除。
 
 ## 10. 下一步（待 Owner 反馈）
 
@@ -254,6 +259,7 @@ python3 inference/photo/retouch.py \
 | 代码 | `inference/photo/{retouch.py, upscale.py, degrade.py, evaluate.py, tools/fetch_assets.py}` |
 | 输出（11 案例 + 报告数据） | `/mnt/data/ai_workspace/outputs/photo-retouch/{<case>/..., run.json, metrics.json, owner_overview.png}` |
 | 上色色偏修复证据（面部放大） | `/mnt/data/ai_workspace/outputs/photo-retouch/hist01_migrant_mother_colorize/skin_zoom.png` |
+| v0.2 上色回归证据（版本演进拼图） | `/mnt/data/ai_workspace/outputs/photo-retouch/colorize-v02-20261018/evidence.png`（说明见 `docs/photo-colorize-v02-20261018.md`） |
 | 素材与许可 | `/mnt/data/ai_workspace/outputs/photo-retouch/materials/{manifest.json, pairs/, historical/, products/, cases.json}` |
 | 目录验收复跑 | `/mnt/data/ai_workspace/outputs/photo-retouch-dir/` |
 | workflow | `alice-workflow-hub/workflows/photo-retouch.yaml`（id `photo.retouch`，已校验） |

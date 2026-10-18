@@ -162,17 +162,57 @@ def remove_damage(im: Image.Image, k: int = 9, thresh: int = 32,
                                    "specks": n_big, "scratches": n_thin}
 
 
-def chroma_transfer(color_img: Image.Image, base_img: Image.Image, strength: float = 1.0) -> Image.Image:
+def chroma_transfer(color_img: Image.Image, base_img: Image.Image, strength: float = 1.0,
+                    smooth: int = 3, flat_damp: float = 1.0) -> Image.Image:
     """LAB 色度迁移：把 color_img 的色度（a/b）搬到 base_img 的亮度（L）上。
-    上色场景保结构：亮度/层次完全沿用修复后的原图，只采纳 AI 猜测的颜色。"""
+    上色场景保结构：亮度/层次完全沿用修复后的原图，只采纳 AI 猜测的颜色。
+
+    色度清理（v0.2，可选参数，默认开）：
+    - ``smooth``：在**色度原生分辨率**上做中值滤波（奇数核），压掉 DDColor/JPEG 的色度噪点，
+      再上采样到基底分辨率——否则 512→2048 放大后细纹理（窗帘/毛衣）会出现彩虹条带；
+    - ``flat_damp``：明亮且低纹理区域（天空/雪地/白墙/白布）把色度向中性回拉。
+      DDColor 在均质亮区常猜出紫/品红大色块（2026-10-18 雪景样张），而这类区域真实色度本就低；
+      暗部与高纹理区不受影响（保住房子里的大面积红布、衣服颜色）。
+
+    :param color_img: AI 上色结果（色度来源）
+    :param base_img: 亮度基底（ESRGAN 超分图或 work 图）
+    :param strength: 色度强度（1.0 = 全采纳）
+    :param smooth: 色度中值滤波核（0 = 关；建议 3）
+    :param flat_damp: 明亮低纹理区色度抑制强度（0 = 关；1.0 = 全拉到中性）
+    """
     import cv2
-    c = cv2.cvtColor(np.asarray(color_img.convert("RGB")), cv2.COLOR_RGB2LAB).astype(np.float32)
-    b = cv2.cvtColor(np.asarray(base_img.convert("RGB")), cv2.COLOR_RGB2LAB).astype(np.float32)
+    # 注意：cv2 对 float32 输入返回 L∈[0,100]、a/b∈[-127,127]；对 uint8 输入返回 L/a/b∈[0,255]。
+    # 本函数按 uint8 口径（a/b 以 128 为中性）编写，**必须用 uint8**，否则负 a/b 会被当成 >128 导致颜色反转/彩虹条带。
+    c = cv2.cvtColor(np.asarray(color_img.convert("RGB")), cv2.COLOR_RGB2LAB)
+    b = cv2.cvtColor(np.asarray(base_img.convert("RGB")), cv2.COLOR_RGB2LAB)
+    a, bb = c[..., 1], c[..., 2]
+    if smooth and smooth >= 3:
+        k = int(smooth) | 1
+        a = cv2.medianBlur(a, k).astype(np.float32)
+        bb = cv2.medianBlur(bb, k).astype(np.float32)
     if c.shape[:2] != b.shape[:2]:
-        c = cv2.resize(c, (b.shape[1], b.shape[0]), interpolation=cv2.INTER_LANCZOS4)
+        size = (b.shape[1], b.shape[0])
+        a = cv2.resize(np.ascontiguousarray(a), size, interpolation=cv2.INTER_LANCZOS4)
+        bb = cv2.resize(np.ascontiguousarray(bb), size, interpolation=cv2.INTER_LANCZOS4)
+    # 明亮低纹理掩膜：局部亮度标准差小 且 亮度高
+    w = None
+    if flat_damp > 0:
+        L = b[..., 0].astype(np.float32)
+        mu = cv2.boxFilter(L, -1, (15, 15))
+        var = cv2.boxFilter(L * L, -1, (15, 15)) - mu * mu
+        std = np.sqrt(np.maximum(var, 0))
+        flat = 1.0 - np.clip((std - 4.0) / 8.0, 0, 1)    # std<4 => 1（均质），std>12 => 0
+        flat *= np.clip((L - 170.0) / 45.0, 0, 1)         # L<170 => 0，L>215 => 1（明亮）
+        w = 1.0 - float(flat_damp) * flat                  # w = 色度保留系数
+        w = w[..., None]
     out = b.copy()
-    out[..., 1] = np.clip(128 + (c[..., 1] - 128) * strength, 0, 255)
-    out[..., 2] = np.clip(128 + (c[..., 2] - 128) * strength, 0, 255)
+    na = 128 + (a - 128) * strength
+    nb = 128 + (bb - 128) * strength
+    if w is not None:
+        na = 128 + (na - 128) * w[..., 0]
+        nb = 128 + (nb - 128) * w[..., 0]
+    out[..., 1] = np.clip(na, 0, 255)
+    out[..., 2] = np.clip(nb, 0, 255)
     return Image.fromarray(cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_LAB2RGB))
 
 
@@ -531,6 +571,13 @@ def main():
                     help="colorize 后处理启用脸/手臂肤色色偏修复（默认关；也可在 manifest 逐案例 skin_fix）")
     ap.add_argument("--damage-fix", action="store_true",
                     help="repair 预处理启用去划痕/去白斑/去霉点（形态学检测 + inpaint；也可在 manifest 逐案例 damage_fix）")
+    ap.add_argument("--chroma-smooth", type=int, default=3,
+                    help="colorize 色度中值滤波核（奇数，默认 3；0=关）——压色度噪点，防彩虹条带")
+    ap.add_argument("--flat-damp", type=float, default=1.0,
+                    help="colorize 明亮低纹理区（天空/雪/白墙）色度抑制强度（默认 1.0；0=关）")
+    ap.add_argument("--color-base", default="up", choices=["up", "work"],
+                    help="colorize 输出亮度基底：up=ESRGAN 超分图（默认，保留 max-side 细节，色度从 DDColor 上采样）"
+                         " / work=SDXL 工作分辨率（v0 旧口径，输出长边=work-res）")
     ap.add_argument("--esrgan", default="realesrgan", choices=["realesrgan", "ultrasharp"])
     ap.add_argument("--esrgan-in-cap", type=int, default=1280,
                     help="ESRGAN 输入长边上限（x4 输出数组内存保护，默认 1280）")
@@ -661,7 +708,11 @@ def main():
                 after = clean_white_bg(after)
             elif m["mode"] == "colorize" and work is not None:
                 # AI 上色结果只取色度，亮度沿用修复后原图（保脸/保结构）
-                after = chroma_transfer(after, work, strength=1.0)
+                # 基底默认取 ESRGAN 超分图（--color-base up）：色度是低频信息，从 work 分辨率上采样足够，
+                # 亮度用 up 图 => 成品保留 max-side 细节，不再退回 work-res（1024）。
+                base = m.get("_up") if args.color_base == "up" else work
+                after = chroma_transfer(after, base if base is not None else work, strength=1.0,
+                                        smooth=args.chroma_smooth, flat_damp=args.flat_damp)
                 # 脸/手臂肤色色偏伪影修复（面部掩膜 + 局部色偏抑制）
                 enable_skin = m.get("skin_fix")
                 if enable_skin is None:
