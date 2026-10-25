@@ -2,11 +2,12 @@ import json
 import os
 import re
 import time
+import uuid
 import threading
 import itertools
 from typing import Dict, Any, List, Optional, Tuple
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # 本机固定只用 1 号 P40（单卡 24GB 装得下：16GB 权重 + 16K KV ~3GB + 缓冲 ≈ 20GB）。
 # GPU0 常驻 OCR 服务，按 C-Land 分卡并行惯例 gemma 独占 GPU1（免 PCIe 卡间同步，decode 更快）。
@@ -15,12 +16,49 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "1")
 
 from llama_cpp import Llama
 
+# --- 0. 单模型垫片（single-model shim）的契约常量 ---
+# 本进程只加载下面这一个 GGUF，没有多模型路由能力。OpenAI 客户端都会带 model 字段，
+# 历史调用方用过 gemma4 / gemma-4 / gemma-4-26b 等别名 ⇒ 全部映射到本进程唯一模型。
+# 未知 model 一律 404 model_not_found（改前是静默 200，客户端打错模型名也发现不了；
+# 见 Gitea base/cland-crawler#766）。
+MODEL_PATH = "/mnt/data/ai_workspace/models/gemma-4-26B-A4B-it-UD-Q4_K_M/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
+
+# 响应里回写的规范 id（不再是 gguf 绝对路径）
+SERVED_MODEL_ID = os.environ.get("GEMMA4_SERVED_MODEL_ID", "gemma-4-26b-a4b")
+
+_MODEL_ALIASES = {
+    SERVED_MODEL_ID,
+    "gemma4",
+    "gemma-4",
+    "gemma-4-26b",
+    "gemma-4-26b-a4b",
+    "gemma-4-26b-a4b-it-ud-q4_k_m",
+    os.path.basename(MODEL_PATH),
+    os.path.splitext(os.path.basename(MODEL_PATH))[0],
+    MODEL_PATH,
+}
+# 兜底：新增调用方若用了别的别名，可用 GEMMA4_MODEL_ALIASES="a,b" 追加，无需改代码
+_MODEL_ALIASES |= {
+    a.strip() for a in os.environ.get("GEMMA4_MODEL_ALIASES", "").split(",") if a.strip()
+}
+_MODEL_ALIASES_LC = {a.lower() for a in _MODEL_ALIASES}
+
+
+def is_known_model(name: str) -> bool:
+    """判断请求里的 model 是否属于本进程唯一模型的别名表（大小写不敏感）。
+
+    入参: name —— 请求体里的 model 字符串。
+    出参: 命中别名表返回 True；空串由调用方视为"未指定"，不在此判定。
+    """
+    return name.strip().lower() in _MODEL_ALIASES_LC
+
+
 # --- 1. 初始化模型 ---
 # 模板适配：llama-cpp-python >= 0.3.20 会自动使用 GGUF 内嵌的官方 chat_template
 # （Jinja2ChatFormatter），不再需要手写 GEMMA_4_JINJA。
 # n_ctx 注意：131072 的 KV cache 约 32GB（f16），P40 24GB 装不下，实测 16384 稳妥。
 llm = Llama(
-    model_path="/mnt/data/ai_workspace/models/gemma-4-26B-A4B-it-UD-Q4_K_M/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+    model_path=MODEL_PATH,
     n_gpu_layers=-1,
     n_ctx=16384,
     flash_attn=True,
@@ -89,7 +127,7 @@ def to_openai_response(r: Dict[str, Any], thought: str, tool_calls: List[Dict], 
         "id": r.get("id", "chatcmpl-gemma"),
         "object": "chat.completion",
         "created": r.get("created"),
-        "model": r.get("model", "gemma-4-26b"),
+        "model": SERVED_MODEL_ID,
         "choices": [{
             "index": 0,
             "message": message,
@@ -125,16 +163,25 @@ def _make_tool_call(match: re.Match, idx: int) -> dict:
     }
 
 
-async def stream_generator(kwargs: Dict[str, Any]):
+async def stream_generator(kwargs: Dict[str, Any], chunk_meta: Dict[str, Any]):
     """流式输出：缓冲跨 token 的 DSL，完整时转换；thought 转 reasoning_content；
-    工具调用 DSL 一旦出现即暂停下发普通文本，防止标签泄漏，匹配后物理截断。"""
+    工具调用 DSL 一旦出现即暂停下发普通文本，防止标签泄漏，匹配后物理截断。
+
+    chunk_meta 携带 OpenAI chunk 必填的 id/object/created/model（改前缺失，
+    与非流式响应不对称；见 Gitea base/cland-crawler#766），每帧都带上。
+    """
     buffer = ""
     tool_idx = 0
+
+    def frame(payload: Dict[str, Any]) -> str:
+        """组装一帧 SSE：chunk_meta 打底 + 本帧内容。"""
+        return sse({**chunk_meta, **payload})
+
     for chunk in llm.create_chat_completion(**kwargs):
         choices = chunk.get("choices") or []
         if not choices:
             # usage 等尾包透传
-            yield sse(chunk)
+            yield frame(chunk)
             continue
         token = (choices[0].get("delta") or {}).get("content") or ""
         buffer += token
@@ -144,7 +191,7 @@ async def stream_generator(kwargs: Dict[str, Any]):
         if m:
             tc = _make_tool_call(m, tool_idx)
             tool_idx += 1
-            yield sse({"choices": [{"delta": {"content": None, "tool_calls": [tc]},
+            yield frame({"choices": [{"delta": {"content": None, "tool_calls": [tc]},
                                    "finish_reason": "tool_calls"}]})
             yield "data: [DONE]\n\n"
             return
@@ -154,7 +201,7 @@ async def stream_generator(kwargs: Dict[str, Any]):
         if tm:
             t = tm.group(1).strip()
             if t:
-                yield sse({"choices": [{"delta": {"reasoning_content": t},
+                yield frame({"choices": [{"delta": {"reasoning_content": t},
                                        "finish_reason": None}]})
             buffer = buffer[tm.end():]
 
@@ -169,22 +216,15 @@ async def stream_generator(kwargs: Dict[str, Any]):
             safe_len = li
         safe = buffer[:safe_len]
         if safe:
-            yield sse({"choices": [{"delta": {"content": safe},
+            yield frame({"choices": [{"delta": {"content": safe},
                                    "finish_reason": None}]})
         buffer = buffer[safe_len:]
 
     # 收尾：剩余无标签文本 + stop
     clean = buffer.replace("<|channel>", "").replace("<channel|>", "").strip()
     if clean:
-        yield sse({"choices": [{"delta": {"content": clean}, "finish_reason": None}]})
-    yield sse({"choices": [{"delta": {}, "finish_reason": "stop"}]})
-    yield "data: [DONE]\n\n"
-
-    # 收尾：剩余无标签文本 + stop
-    clean = buffer.replace("<|channel>", "").replace("<channel|>", "").strip()
-    if clean:
-        yield sse({"choices": [{"delta": {"content": clean}, "finish_reason": None}]})
-    yield sse({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+        yield frame({"choices": [{"delta": {"content": clean}, "finish_reason": None}]})
+    yield frame({"choices": [{"delta": {}, "finish_reason": "stop"}]})
     yield "data: [DONE]\n\n"
 
 
@@ -195,8 +235,25 @@ async def chat_endpoint(request: Request):
     body = await request.json()
     messages = body.get("messages", [])
     tools = body.get("tools")  # 透传给模板渲染，让模型知道可用工具
+    requested_model = (body.get("model") or "").strip()
     print(f"[req#{_req_id}] ENTER thr={threading.current_thread().name} "
-          f"stream={bool(body.get('stream'))} max_tokens={body.get('max_tokens')}", flush=True)
+          f"stream={bool(body.get('stream'))} max_tokens={body.get('max_tokens')} "
+          f"model={requested_model or '<unset>'}", flush=True)
+
+    # 单模型垫片也要守 OpenAI 语义：未知模型报错，而不是静默跑本机模型
+    if requested_model and not is_known_model(requested_model):
+        print(f"[req#{_req_id}] REJECT model={requested_model!r} 不在别名表 "
+              f"{sorted(_MODEL_ALIASES_LC)}", flush=True)
+        return JSONResponse(
+            status_code=404,
+            content={"error": {
+                "message": f"The model `{requested_model}` does not exist. "
+                           f"This endpoint serves a single model: `{SERVED_MODEL_ID}`.",
+                "type": "invalid_request_error",
+                "param": "model",
+                "code": "model_not_found",
+            }},
+        )
 
     kwargs: Dict[str, Any] = dict(
         messages=messages,
@@ -211,7 +268,14 @@ async def chat_endpoint(request: Request):
 
     if body.get("stream"):
         kwargs["stream"] = True
-        return StreamingResponse(stream_generator(kwargs), media_type="text/event-stream")
+        chunk_meta = {
+            "id": f"chatcmpl-{uuid.uuid4().hex}",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": SERVED_MODEL_ID,
+        }
+        return StreamingResponse(stream_generator(kwargs, chunk_meta),
+                                 media_type="text/event-stream")
 
     r = llm.create_chat_completion(**kwargs)
     print(f"[req#{_req_id}] DONE  thr={threading.current_thread().name} total={time.time()-_t0:.2f}s "
